@@ -38,14 +38,17 @@ func NewAWSClients(ctx context.Context, profile, region string) (*AWSClients, er
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Route53 is a global service but uses us-east-1 for API calls
-	route53Cfg := cfg.Copy()
-	route53Cfg.Region = "us-east-1"
+	// All resources are created in us-east-1:
+	// - Route53 is a global service but uses us-east-1 for API calls
+	// - CloudFormation runs in us-east-1 for ACM certificates (required for CloudFront)
+	// - S3 bucket is created by CloudFormation in us-east-1
+	usEast1Cfg := cfg.Copy()
+	usEast1Cfg.Region = "us-east-1"
 
 	return &AWSClients{
-		Route53:        route53.NewFromConfig(route53Cfg),
+		Route53:        route53.NewFromConfig(usEast1Cfg),
 		CloudFormation: cloudformation.NewFromConfig(cfg),
-		S3:             s3.NewFromConfig(cfg),
+		S3:             s3.NewFromConfig(usEast1Cfg),
 		Config:         cfg,
 	}, nil
 }
