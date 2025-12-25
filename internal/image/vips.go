@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -165,6 +166,119 @@ func (v *VipsImage) Save(path string, quality int) error {
 	default:
 		return fmt.Errorf("unsupported output format: %s", ext)
 	}
+}
+
+// getTextDimensions uses vips CLI to measure actual text dimensions.
+func getTextDimensions(text, font string) (width, height int, err error) {
+	tmpFile := "/tmp/ansel_text_measure.png"
+	defer os.Remove(tmpFile)
+
+	// Use vips text command to create a text image
+	cmd := exec.Command("vips", "text", tmpFile, text, "--font", font)
+	if err := cmd.Run(); err != nil {
+		return 0, 0, err
+	}
+
+	// Read dimensions using vipsheader
+	out, err := exec.Command("vipsheader", "-f", "width", tmpFile).Output()
+	if err != nil {
+		return 0, 0, err
+	}
+	fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &width)
+
+	out, err = exec.Command("vipsheader", "-f", "height", tmpFile).Output()
+	if err != nil {
+		return 0, 0, err
+	}
+	fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &height)
+
+	return width, height, nil
+}
+
+// AddLabel renders a text label on the image with a white background.
+// Font should be in Pango format, e.g. "sans 24" or "Arial Bold 18".
+// fontSize is the point size used in the font string (needed for positioning).
+// offsetX is the X position where the image starts (left edge alignment).
+// imageBottomY is the Y position where the image ends (bottom edge).
+// paddingY is the vertical padding between image bottom and label top.
+func (v *VipsImage) AddLabel(text, font string, fontSize int, offsetX, imageBottomY, paddingY int) error {
+	if text == "" {
+		return nil
+	}
+
+	// Get actual text dimensions by rendering to a temporary image
+	textWidth, textHeight, err := getTextDimensions(text, font)
+	if err != nil {
+		// Fallback to estimation
+		debugLog("AddLabel: getTextDimensions failed: %v, using estimation", err)
+		textWidth = int(float64(len(text)) * float64(fontSize) * 0.6)
+		textHeight = int(float64(fontSize) * 1.35)
+	}
+
+	padding := fontSize / 3
+	bgWidth := textWidth + 2*padding
+	bgHeight := textHeight + padding
+
+	// Position label so its top aligns with imageBottomY + paddingY
+	bgTop := imageBottomY + paddingY
+	bgLeft := offsetX - padding/2
+	if bgLeft < 0 {
+		bgLeft = 0
+	}
+	if bgTop < 0 {
+		bgTop = 0
+	}
+	// Clamp to image bounds
+	if bgLeft+bgWidth > v.Width() {
+		bgWidth = v.Width() - bgLeft
+	}
+	if bgTop+bgHeight > v.Height() {
+		bgHeight = v.Height() - bgTop
+	}
+
+	debugLog("AddLabel: text=%q font=%s fontSize=%d", text, font, fontSize)
+	debugLog("AddLabel: offsetX=%d imageBottomY=%d paddingY=%d textSize=%dx%d imageSize=%dx%d",
+		offsetX, imageBottomY, paddingY, textWidth, textHeight, v.Width(), v.Height())
+	debugLog("AddLabel: background rect at (%d,%d) size %dx%d", bgLeft, bgTop, bgWidth, bgHeight)
+
+	// Draw white background rectangle
+	bgColor := vips.ColorRGBA{
+		R: 255,
+		G: 255,
+		B: 255,
+		A: 255,
+	}
+
+	if err := v.ref.DrawRect(bgColor, bgLeft, bgTop, bgWidth, bgHeight, true); err != nil {
+		debugLog("AddLabel: DrawRect error: %v", err)
+		return err
+	}
+
+	// Now overlay black text (solid, no transparency)
+	// Position text inside the background box
+	textX := bgLeft + padding/2
+	textY := bgTop + padding/2
+
+	labelColor := vips.Color{R: 0, G: 0, B: 0}
+	params := &vips.LabelParams{
+		Text:      text,
+		Font:      font,
+		Width:     vips.Scalar{Value: float64(v.Width() - textX), Relative: false}, // Max width for text
+		Height:    vips.Scalar{Value: float64(textHeight), Relative: false},
+		OffsetX:   vips.Scalar{Value: float64(textX), Relative: false},
+		OffsetY:   vips.Scalar{Value: float64(textY), Relative: false},
+		Opacity:   1.0, // Solid black text
+		Color:     labelColor,
+		Alignment: vips.AlignLow, // Left align
+	}
+
+	debugLog("AddLabel: text position (%d,%d) maxWidth=%d height=%d", textX, textY, v.Width()-textX, textHeight)
+
+	if err := v.ref.Label(params); err != nil {
+		debugLog("AddLabel: Label error: %v", err)
+		return err
+	}
+	return nil
 }
 
 // filterToVipsKernel converts our Filter type to vips kernel.

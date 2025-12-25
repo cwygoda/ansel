@@ -79,13 +79,17 @@ Examples:
 }
 
 var (
-	processSize    string
-	processFilter  string
-	processFit     string
-	processFrame   float64
-	processColor   string
-	processQuality int
-	processOutDir  string
+	processSize         string
+	processFilter       string
+	processFit          string
+	processFrame        float64
+	processColor        string
+	processQuality      int
+	processOutDir       string
+	processLabel        bool
+	processLabelFont    string
+	processLabelSize    float64
+	processLabelPadding float64
 )
 
 func init() {
@@ -98,6 +102,12 @@ func init() {
 	processCmd.Flags().StringVar(&processColor, "color", "#fff", "Frame color (hex or named)")
 	processCmd.Flags().IntVar(&processQuality, "quality", 92, "JPEG quality (1-100)")
 	processCmd.Flags().StringVarP(&processOutDir, "outdir", "o", "", "Output directory (created if needed)")
+
+	// Label flags
+	processCmd.Flags().BoolVar(&processLabel, "label", false, "Add IPTC headline as text label")
+	processCmd.Flags().StringVar(&processLabelFont, "label-font", "sans", "Font family for label")
+	processCmd.Flags().Float64Var(&processLabelSize, "label-size", 1.5, "Label font size as percentage of shorter side")
+	processCmd.Flags().Float64Var(&processLabelPadding, "label-padding", 1, "Padding between image and label as percentage of shorter side")
 
 	processCmd.MarkFlagRequired("size")
 }
@@ -150,9 +160,48 @@ func runProcess(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// labelConfig holds label rendering parameters
+type labelConfig struct {
+	enabled      bool
+	text         string
+	font         string
+	size         int
+	offsetX      int
+	imageBottomY int // Y position where image ends (frame begins)
+	paddingY     int // Padding below image bottom
+}
+
 func processFile(inputPath string, targetWidth, targetHeight, frameWidthPx int, frameColor imglib.Color, filter imglib.Filter) error {
 	// Generate output path
 	outputPath := generateOutputPath(inputPath, processOutDir)
+
+	// Read IPTC headline if label is enabled
+	var label labelConfig
+	if processLabel {
+		headline := imglib.ReadIPTCHeadline(inputPath)
+		if headline != "" {
+			// Calculate font size (percentage of shorter output side)
+			shorterSide := targetWidth
+			if targetHeight < targetWidth {
+				shorterSide = targetHeight
+			}
+			fontSize := int(float64(shorterSide) * processLabelSize / 100.0)
+			if fontSize < 8 {
+				fontSize = 8 // minimum readable size
+			}
+
+			// Calculate padding (percentage of shorter side)
+			paddingY := int(float64(shorterSide) * processLabelPadding / 100.0)
+
+			label = labelConfig{
+				enabled:  true,
+				text:     headline,
+				font:     fmt.Sprintf("%s %d", processLabelFont, fontSize),
+				size:     fontSize,
+				paddingY: paddingY,
+			}
+		}
+	}
 
 	// Load image using vips
 	img, err := imglib.LoadVips(inputPath)
@@ -163,17 +212,29 @@ func processFile(inputPath string, targetWidth, targetHeight, frameWidthPx int, 
 
 	fmt.Fprintf(os.Stderr, "%s: %dx%d", inputPath, img.Width(), img.Height())
 
+	// imageOffsetX/imageBottomY track where the image is in the final output
+	var imageOffsetX, imageBottomY int
+
 	switch processFit {
 	case "expand":
-		err = processExpandVips(img, targetWidth, targetHeight, frameWidthPx, frameColor, filter)
+		imageOffsetX, imageBottomY, err = processExpandVips(img, targetWidth, targetHeight, frameWidthPx, frameColor, filter)
 	case "wrap":
-		err = processWrapVips(img, targetWidth, targetHeight, frameWidthPx, frameColor, filter)
+		imageOffsetX, imageBottomY, err = processWrapVips(img, targetWidth, targetHeight, frameWidthPx, frameColor, filter)
 	default:
 		return fmt.Errorf("unknown fit mode: %s", processFit)
 	}
 
 	if err != nil {
 		return err
+	}
+
+	// Add label if enabled and headline was found
+	if label.enabled {
+		label.offsetX = imageOffsetX
+		label.imageBottomY = imageBottomY
+		if err := img.AddLabel(label.text, label.font, label.size, label.offsetX, label.imageBottomY, label.paddingY); err != nil {
+			return fmt.Errorf("failed to add label: %w", err)
+		}
 	}
 
 	// Save
@@ -187,18 +248,19 @@ func processFile(inputPath string, targetWidth, targetHeight, frameWidthPx int, 
 
 // processExpandVips creates output of exactly targetWidth x targetHeight.
 // Image is resized to fit within the frame area and centered.
-func processExpandVips(img *imglib.VipsImage, targetWidth, targetHeight, frameWidth int, frameColor imglib.Color, filter imglib.Filter) error {
+// Returns (imageOffsetX, imageBottomY) for label positioning.
+func processExpandVips(img *imglib.VipsImage, targetWidth, targetHeight, frameWidth int, frameColor imglib.Color, filter imglib.Filter) (int, int, error) {
 	// Calculate available space for the image (inside frame)
 	availWidth := targetWidth - 2*frameWidth
 	availHeight := targetHeight - 2*frameWidth
 
 	if availWidth <= 0 || availHeight <= 0 {
-		return fmt.Errorf("frame too large for output size")
+		return 0, 0, fmt.Errorf("frame too large for output size")
 	}
 
 	// Resize to fit within available space
 	if err := img.ResizeToFit(availWidth, availHeight, filter); err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	// Calculate centering offsets
@@ -206,26 +268,33 @@ func processExpandVips(img *imglib.VipsImage, targetWidth, targetHeight, frameWi
 	resizeHeight := img.Height()
 	offsetX := (targetWidth - resizeWidth) / 2
 	offsetY := (targetHeight - resizeHeight) / 2
+	imageBottomY := offsetY + resizeHeight
 
 	// Add frame with asymmetric borders to center the image
-	return img.AddFrame(
-		offsetY,                              // top
-		targetWidth-resizeWidth-offsetX,      // right
-		targetHeight-resizeHeight-offsetY,    // bottom
-		offsetX,                              // left
+	err := img.AddFrame(
+		offsetY,                           // top
+		targetWidth-resizeWidth-offsetX,   // right
+		targetHeight-resizeHeight-offsetY, // bottom
+		offsetX,                           // left
 		frameColor,
 	)
+	return offsetX, imageBottomY, err
 }
 
 // processWrapVips resizes image to fit target size, then wraps frame around it.
-func processWrapVips(img *imglib.VipsImage, targetWidth, targetHeight, frameWidth int, frameColor imglib.Color, filter imglib.Filter) error {
+// Returns (imageOffsetX, imageBottomY) for label positioning.
+func processWrapVips(img *imglib.VipsImage, targetWidth, targetHeight, frameWidth int, frameColor imglib.Color, filter imglib.Filter) (int, int, error) {
 	// Resize to fit target dimensions
 	if err := img.ResizeToFit(targetWidth, targetHeight, filter); err != nil {
-		return err
+		return 0, 0, err
 	}
 
+	// Remember image height before adding frame
+	imageBottomY := frameWidth + img.Height()
+
 	// Add uniform frame
-	return img.AddUniformFrame(frameWidth, frameColor)
+	err := img.AddUniformFrame(frameWidth, frameColor)
+	return frameWidth, imageBottomY, err
 }
 
 // generateOutputPath creates output filename with version suffix.
