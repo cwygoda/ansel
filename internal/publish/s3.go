@@ -64,11 +64,12 @@ func getContentType(filename string) string {
 
 // SyncDirectory uploads all files from buildDir to the S3 bucket.
 // Only uploads files that have changed (based on ETag/MD5 comparison).
-func (c *AWSClients) SyncDirectory(ctx context.Context, bucket, buildDir string) error {
+// Returns the number of files uploaded.
+func (c *AWSClients) SyncDirectory(ctx context.Context, bucket, buildDir string) (int, error) {
 	// Get existing objects
 	existing, err := c.listObjects(ctx, bucket)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Walk the build directory and collect files to upload
@@ -84,11 +85,11 @@ func (c *AWSClients) SyncDirectory(ctx context.Context, bucket, buildDir string)
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to walk build directory: %w", err)
+		return 0, fmt.Errorf("failed to walk build directory: %w", err)
 	}
 
 	if len(files) == 0 {
-		return fmt.Errorf("no files found in %s", buildDir)
+		return 0, fmt.Errorf("no files found in %s", buildDir)
 	}
 
 	fmt.Fprintf(os.Stderr, "Syncing %d files to s3://%s\n", len(files), bucket)
@@ -99,7 +100,7 @@ func (c *AWSClients) SyncDirectory(ctx context.Context, bucket, buildDir string)
 	for _, path := range files {
 		relPath, err := filepath.Rel(buildDir, path)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		// Use forward slashes for S3 keys
 		key := filepath.ToSlash(relPath)
@@ -107,7 +108,7 @@ func (c *AWSClients) SyncDirectory(ctx context.Context, bucket, buildDir string)
 		// Check if file needs uploading
 		localMD5, err := fileMD5(path)
 		if err != nil {
-			return fmt.Errorf("failed to compute MD5 for %s: %w", path, err)
+			return 0, fmt.Errorf("failed to compute MD5 for %s: %w", path, err)
 		}
 
 		if etag, ok := existing[key]; ok {
@@ -121,14 +122,14 @@ func (c *AWSClients) SyncDirectory(ctx context.Context, bucket, buildDir string)
 
 		// Upload the file
 		if err := c.uploadFile(ctx, bucket, key, path); err != nil {
-			return fmt.Errorf("failed to upload %s: %w", path, err)
+			return 0, fmt.Errorf("failed to upload %s: %w", path, err)
 		}
 		fmt.Fprintf(os.Stderr, "  Uploaded: %s\n", key)
 		uploaded++
 	}
 
 	fmt.Fprintf(os.Stderr, "Sync complete: %d uploaded, %d unchanged\n", uploaded, skipped)
-	return nil
+	return uploaded, nil
 }
 
 func (c *AWSClients) listObjects(ctx context.Context, bucket string) (map[string]string, error) {

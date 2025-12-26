@@ -149,13 +149,16 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		HostedZoneID: zone.ID,
 	}
 
-	if err := clients.CreateOrUpdateStack(ctx, stackParams); err != nil {
+	needsWait, err := clients.CreateOrUpdateStack(ctx, stackParams)
+	if err != nil {
 		return err
 	}
 
-	// Wait for stack to complete
-	if err := clients.WaitForStack(ctx, stackName); err != nil {
-		return err
+	// Wait for stack to complete only if an operation was started
+	if needsWait {
+		if err := clients.WaitForStack(ctx, stackName); err != nil {
+			return err
+		}
 	}
 
 	// Get stack outputs
@@ -165,8 +168,16 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	}
 
 	// Sync files to S3
-	if err := clients.SyncDirectory(ctx, outputs.BucketName, publishBuildDir); err != nil {
+	uploaded, err := clients.SyncDirectory(ctx, outputs.BucketName, publishBuildDir)
+	if err != nil {
 		return err
+	}
+
+	// Invalidate CloudFront cache if any files were uploaded
+	if uploaded > 0 {
+		if err := clients.InvalidateDistribution(ctx, outputs.DistributionID); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "\nSite published: %s\n", outputs.SiteURL)
