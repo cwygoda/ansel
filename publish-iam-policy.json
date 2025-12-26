@@ -1,0 +1,72 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"cloudformation:CreateStack",
+				"cloudformation:UpdateStack",
+				"cloudformation:DescribeStacks",
+				"cloudformation:DescribeStackEvents"
+			],
+			"Resource": "arn:aws:cloudformation:us-east-1:*:stack/ansel-*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"route53:ListHostedZones",
+				"route53:GetHostedZone",
+				"route53:ChangeResourceRecordSets",
+				"route53:GetChange"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"s3:CreateBucket",
+				"s3:PutBucketPolicy",
+				"s3:DeleteBucketPolicy",
+				"s3:PutBucketPublicAccessBlock",
+				"s3:PutEncryptionConfiguration",
+				"s3:ListBucket",
+				"s3:GetObject",
+				"s3:PutObject"
+			],
+			"Resource": "arn:aws:s3:::ansel-*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"route53:ListHostedZones",
+				"route53:ChangeResourceRecordSets",
+				"route53:GetChange"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"cloudfront:CreateDistribution",
+				"cloudfront:UpdateDistribution",
+				"cloudfront:GetDistribution",
+				"cloudfront:CreateOriginAccessControl",
+				"cloudfront:DeleteOriginAccessControl",
+				"cloudfront:CreateFunction",
+				"cloudfront:UpdateFunction",
+				"cloudfront:PublishFunction",
+				"cloudfront:DescribeFunction"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"acm:RequestCertificate",
+				"acm:DescribeCertificate",
+				"acm:DeleteCertificate"
+			],
+			"Resource": "*"
+		}
+	]
+}

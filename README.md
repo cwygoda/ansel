@@ -111,6 +111,73 @@ Supports hex colors and named colors:
 - Hex: `#fff`, `#ffffff`, `#ff0000`, `#rgba`
 - Named: `white`, `black`, `gray`, `red`, `green`, `blue`, `yellow`, `orange`, `purple`, `pink`, `cyan`, `magenta`, `navy`, `teal`, `olive`, `maroon`, `silver`, `lime`
 
+## Publish Command
+
+Publish processed images to a CDN-backed subdomain on AWS.
+
+```bash
+ansel publish [flags]
+```
+
+### What It Creates
+
+On first run, the publish command creates a CloudFormation stack with:
+
+- **S3 bucket** for content storage
+- **CloudFront distribution** with Origin Access Control (OAC)
+- **ACM certificate** with automatic DNS validation
+- **Route53 subdomain record** pointing to CloudFront
+
+Subsequent runs update the existing site and invalidate the CloudFront cache.
+
+### Examples
+
+```bash
+# Publish ./build directory (default)
+ansel publish
+
+# Publish a specific directory
+ansel publish --build-dir ./dist
+
+# Use a specific subdomain
+ansel publish --subdomain gallery
+
+# Use a specific AWS profile
+ansel publish --profile myprofile
+```
+
+### Flags
+
+| Flag           | Default   | Description                                      |
+|----------------|-----------|--------------------------------------------------|
+| `--build-dir`  | `./build` | Directory containing files to upload             |
+| `--subdomain`  |           | Subdomain name (randomly generated if not set)   |
+| `--profile`    |           | AWS profile name                                 |
+| `--region`     |           | AWS region (uses default from AWS config)        |
+
+### Configuration
+
+Settings are saved to `.ansel.toml` in the current directory:
+
+```toml
+[publish]
+subdomain = "abc123"
+hosted_zone_id = "Z1234567890ABC"
+domain_name = "example.com"
+```
+
+On first run, if no subdomain is specified, a random one is generated and saved.
+
+### AWS Credentials
+
+Requires AWS credentials with permissions for CloudFormation, S3, CloudFront, ACM, and Route53. See [`publish-iam-policy.json`](publish-iam-policy.json) for the required IAM policy.
+
+Configure credentials via:
+
+- AWS CLI profile (`~/.aws/credentials`)
+- Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+- IAM role (when running on EC2/ECS)
+
 ## Environment Variables
 
 | Variable          | Default | Description                                      |
