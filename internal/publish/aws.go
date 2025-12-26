@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -15,6 +16,7 @@ import (
 type AWSClients struct {
 	Route53        *route53.Client
 	CloudFormation *cloudformation.Client
+	CloudFront     *cloudfront.Client
 	S3             *s3.Client
 	Config         aws.Config
 }
@@ -48,6 +50,7 @@ func NewAWSClients(ctx context.Context, profile, region string) (*AWSClients, er
 	return &AWSClients{
 		Route53:        route53.NewFromConfig(usEast1Cfg),
 		CloudFormation: cloudformation.NewFromConfig(cfg),
+		CloudFront:     cloudfront.NewFromConfig(usEast1Cfg),
 		S3:             s3.NewFromConfig(usEast1Cfg),
 		Config:         cfg,
 	}, nil

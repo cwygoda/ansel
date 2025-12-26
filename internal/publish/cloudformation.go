@@ -10,6 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudfront/types"
 )
 
 // StackParams holds parameters for stack creation/update.
@@ -70,7 +72,8 @@ func containsImpl(s, substr string) bool {
 }
 
 // CreateOrUpdateStack deploys or updates the CloudFormation stack.
-func (c *AWSClients) CreateOrUpdateStack(ctx context.Context, params StackParams) error {
+// Returns true if an operation was started and waiting is required.
+func (c *AWSClients) CreateOrUpdateStack(ctx context.Context, params StackParams) (bool, error) {
 	cf := c.CloudFormationUsEast1()
 	template := GetTemplate()
 
@@ -82,7 +85,7 @@ func (c *AWSClients) CreateOrUpdateStack(ctx context.Context, params StackParams
 
 	exists, err := c.StackExists(ctx, params.StackName)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if exists {
@@ -97,9 +100,9 @@ func (c *AWSClients) CreateOrUpdateStack(ctx context.Context, params StackParams
 			// "No updates are to be performed" is not an error
 			if isNoUpdateError(err) {
 				fmt.Fprintln(os.Stderr, "Stack is up to date")
-				return nil
+				return false, nil
 			}
-			return fmt.Errorf("failed to update stack: %w", err)
+			return false, fmt.Errorf("failed to update stack: %w", err)
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "Creating stack: %s\n", params.StackName)
@@ -110,11 +113,11 @@ func (c *AWSClients) CreateOrUpdateStack(ctx context.Context, params StackParams
 			Capabilities: []types.Capability{types.CapabilityCapabilityIam},
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create stack: %w", err)
+			return false, fmt.Errorf("failed to create stack: %w", err)
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 func isNoUpdateError(err error) bool {
@@ -127,6 +130,7 @@ func (c *AWSClients) WaitForStack(ctx context.Context, stackName string) error {
 
 	fmt.Fprintln(os.Stderr, "Waiting for stack (this may take 10-15 minutes for certificate validation)...")
 
+	start := time.Now()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
@@ -148,8 +152,9 @@ func (c *AWSClients) WaitForStack(ctx context.Context, stackName string) error {
 
 			stack := output.Stacks[0]
 			status := stack.StackStatus
+			elapsed := int(time.Since(start).Seconds())
 
-			fmt.Fprintf(os.Stderr, "  Status: %s\n", status)
+			fmt.Fprintf(os.Stderr, "  %s [%ds]\n", status, elapsed)
 
 			switch status {
 			case types.StackStatusCreateComplete, types.StackStatusUpdateComplete:
@@ -223,4 +228,56 @@ func (c *AWSClients) GetStackOutputs(ctx context.Context, stackName string) (*St
 	}
 
 	return outputs, nil
+}
+
+// InvalidateDistribution creates a CloudFront invalidation for all paths
+// and waits for it to complete.
+func (c *AWSClients) InvalidateDistribution(ctx context.Context, distributionID string) error {
+	fmt.Fprintln(os.Stderr, "Creating CloudFront invalidation...")
+
+	callerRef := fmt.Sprintf("ansel-%d", time.Now().UnixNano())
+
+	result, err := c.CloudFront.CreateInvalidation(ctx, &cloudfront.CreateInvalidationInput{
+		DistributionId: aws.String(distributionID),
+		InvalidationBatch: &cftypes.InvalidationBatch{
+			CallerReference: aws.String(callerRef),
+			Paths: &cftypes.Paths{
+				Quantity: aws.Int32(1),
+				Items:    []string{"/*"},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create invalidation: %w", err)
+	}
+
+	invalidationID := *result.Invalidation.Id
+	fmt.Fprintf(os.Stderr, "Invalidation %s created, waiting for completion...\n", invalidationID)
+
+	start := time.Now()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			inv, err := c.CloudFront.GetInvalidation(ctx, &cloudfront.GetInvalidationInput{
+				DistributionId: aws.String(distributionID),
+				Id:             aws.String(invalidationID),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to get invalidation status: %w", err)
+			}
+
+			status := *inv.Invalidation.Status
+			elapsed := int(time.Since(start).Seconds())
+			if status == "Completed" {
+				fmt.Fprintf(os.Stderr, "Invalidation completed in %ds\n", elapsed)
+				return nil
+			}
+			fmt.Fprintf(os.Stderr, "  %s [%ds]\n", status, elapsed)
+		}
+	}
 }
