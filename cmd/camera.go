@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/cwygoda/ansel/internal/camera/application"
 	"github.com/cwygoda/ansel/internal/camera/domain"
 	"github.com/cwygoda/ansel/internal/camera/ports"
+	"github.com/cwygoda/ansel/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -218,15 +218,5 @@ func printImportResult(result domain.ImportResult, dryRun bool) {
 }
 
 func expandCLIPath(path string) (string, error) {
-	if path == "" || path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if path == "" || path == "~" {
-			return home, nil
-		}
-		return filepath.Join(home, path[2:]), nil
-	}
-	return path, nil
+	return config.ExpandPath(path)
 }

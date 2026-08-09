@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -27,6 +28,22 @@ func ConfigPath() (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 	return filepath.Join(home, ".ansel", "config.toml"), nil
+}
+
+// ExpandPath resolves a leading ~ against the user's home directory. Paths
+// without a ~ prefix are returned unchanged.
+func ExpandPath(path string) (string, error) {
+	if path != "" && path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	if path == "" || path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[2:]), nil
 }
 
 // EnsureConfigDir creates the config directory if it doesn't exist.

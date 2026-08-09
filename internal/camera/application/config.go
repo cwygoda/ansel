@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/cwygoda/ansel/internal/config"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -97,15 +97,5 @@ func userConfigPath() (string, error) {
 }
 
 func expandPath(path string) (string, error) {
-	if path == "" || path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		if path == "" || path == "~" {
-			return home, nil
-		}
-		return filepath.Join(home, path[2:]), nil
-	}
-	return path, nil
+	return config.ExpandPath(path)
 }
