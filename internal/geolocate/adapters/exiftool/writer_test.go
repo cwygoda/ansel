@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cwygoda/ansel/internal/exiftool"
 	"github.com/cwygoda/ansel/internal/geolocate/domain"
 )
 
@@ -253,6 +254,16 @@ func requireExiftool(t *testing.T) {
 	}
 }
 
+// newTestWriter opens a session for one test and closes it afterwards.
+func newTestWriter(t *testing.T) *Writer {
+	t.Helper()
+	requireExiftool(t)
+
+	session := exiftool.New("")
+	t.Cleanup(func() { _ = session.Close() })
+	return NewWriter(session)
+}
+
 func readTag(t *testing.T, path, tag string) string {
 	t.Helper()
 	output, err := exec.Command("exiftool", "-n", "-s3", "-"+tag, path).Output()
@@ -275,7 +286,7 @@ func TestWriteCreatesASidecarAndRoundTripsThePosition(t *testing.T) {
 	}
 
 	plans := []domain.WritePlan{plan}
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -309,7 +320,7 @@ func TestWritePreservesRatingsAlreadyInTheSidecar(t *testing.T) {
 			Time: trackedAt, Latitude: 52.5048, Longitude: 13.2995,
 		}},
 	}}
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -333,7 +344,7 @@ func TestWriteReportsAFailingTarget(t *testing.T) {
 		Fix:       domain.Fix{Position: domain.TrackPoint{Time: trackedAt, Latitude: 52.5, Longitude: 13.3}},
 	}}
 
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("a single bad target must not fail the batch: %v", err)
 	}
 
@@ -345,6 +356,42 @@ func TestWriteReportsAFailingTarget(t *testing.T) {
 	}
 	if !strings.Contains(plans[0].Skipped, "DSC_1234.xmp") {
 		t.Errorf("reason %q does not name the target", plans[0].Skipped)
+	}
+}
+
+// Every plan is its own command on one shared process, so a failure has to be
+// pinned to the plan that caused it and leave the stream in step for the next.
+func TestWriteContinuesPastAFailingTarget(t *testing.T) {
+	requireExiftool(t)
+
+	dir := t.TempDir()
+	position := domain.Fix{Position: domain.TrackPoint{
+		Time: trackedAt, Latitude: 52.5048, Longitude: 13.2995,
+	}}
+	plans := []domain.WritePlan{
+		{PhotoPath: "a.NEF", Target: filepath.Join(dir, "a.xmp"), Fix: position},
+		{PhotoPath: "b.NEF", Target: filepath.Join(dir, "nowhere", "b.xmp"), Fix: position},
+		{PhotoPath: "c.NEF", Target: filepath.Join(dir, "c.xmp"), Fix: position},
+	}
+
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !plans[0].Written {
+		t.Errorf("the first plan was not written: %s", plans[0].Skipped)
+	}
+	if plans[1].Written {
+		t.Error("the unwritable plan was reported as written")
+	}
+	if !plans[2].Written {
+		t.Errorf("a failure derailed the plan behind it: %s", plans[2].Skipped)
+	}
+
+	// The recovered plan must carry its own position, not the failed one's
+	// leftovers.
+	if got := readTag(t, plans[2].Target, "XMP:GPSLatitude"); got != "52.5048" {
+		t.Errorf("XMP:GPSLatitude = %q, expected 52.5048", got)
 	}
 }
 
@@ -360,7 +407,7 @@ func TestWriteLeavesSkippedPlansAlone(t *testing.T) {
 		Fix:       domain.Fix{Position: domain.TrackPoint{Time: trackedAt, Latitude: 52.5, Longitude: 13.3}},
 	}}
 
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -399,7 +446,7 @@ func TestWriteRecordsTheGPSTimestampInASidecar(t *testing.T) {
 		Target:    filepath.Join(t.TempDir(), "DSC_1234.xmp"),
 		Fix:       domain.Fix{Position: domain.TrackPoint{Time: trackedAt, Latitude: 52.5048, Longitude: 13.2995}},
 	}}
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -419,7 +466,7 @@ func TestWriteRecordsADriftCorrectedTimestampInASidecar(t *testing.T) {
 		CorrectedWall:   time.Date(2017, 8, 8, 20, 27, 24, 0, time.UTC),
 		CorrectedOffset: 2 * time.Hour,
 	}}
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -450,7 +497,7 @@ func TestWriteInPlaceRecordsEXIFGPS(t *testing.T) {
 			Elevation: 29.2, HasElevation: true,
 		}},
 	}}
-	if err := NewWriter("exiftool").Write(context.Background(), plans); err != nil {
+	if err := newTestWriter(t).Write(context.Background(), plans); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

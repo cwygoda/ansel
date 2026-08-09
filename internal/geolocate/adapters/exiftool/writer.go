@@ -4,21 +4,19 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os/exec"
 	"strconv"
-	"strings"
 
+	"github.com/cwygoda/ansel/internal/exiftool"
 	"github.com/cwygoda/ansel/internal/geolocate/domain"
 )
 
 // Writer records positions through exiftool.
 //
-// Writing deliberately does not share the reader's long-lived `-stay_open`
-// process. Every photograph carries different tag values, so nothing can be
-// batched into one command anyway, and a write that fails must be attributed
-// to the one file it touched. A separate invocation per photograph makes that
-// attribution exact, at a cost only paid on runs that write at all — the
-// default is a dry run.
+// Every photograph carries different tag values, so nothing can be batched
+// into one command, and a write that fails must be attributed to the one file
+// it touched. Both hold true on the shared session: each plan is its own
+// numbered command, and exiftool reports that command's own exit status back
+// on stderr, so attribution stays exact without a process per photograph.
 //
 // exiftool is used for sidecars as well as for in-place edits rather than
 // rendering XMP here, because a sidecar beside a photograph is very often one
@@ -26,15 +24,12 @@ import (
 // file from a template would silently discard an evening's work; exiftool
 // updates it in place and leaves untouched what it was not asked about.
 type Writer struct {
-	binary string
+	session *exiftool.Session
 }
 
-// NewWriter returns a Writer driving the given exiftool binary.
-func NewWriter(binary string) *Writer {
-	if binary == "" {
-		binary = "exiftool"
-	}
-	return &Writer{binary: binary}
+// NewWriter returns a Writer driving the given session.
+func NewWriter(session *exiftool.Session) *Writer {
+	return &Writer{session: session}
 }
 
 // Write records the position for every plan not already marked skipped,
@@ -61,10 +56,13 @@ func (w *Writer) Write(ctx context.Context, plans []domain.WritePlan) error {
 func (w *Writer) writeOne(ctx context.Context, plan *domain.WritePlan) {
 	args := append(writeArguments(*plan), plan.Target)
 
-	output, err := exec.CommandContext(ctx, w.binary, args...).CombinedOutput()
+	response, err := w.session.Execute(ctx, args...)
 	if err != nil {
-		plan.Skipped = fmt.Sprintf("failed to write %s: %v (%s)",
-			plan.Target, err, strings.TrimSpace(string(output)))
+		plan.Skipped = fmt.Sprintf("failed to write %s: %v", plan.Target, err)
+		return
+	}
+	if !response.Ok() {
+		plan.Skipped = fmt.Sprintf("failed to write %s: %s", plan.Target, response.Stderr)
 		return
 	}
 	plan.Written = true

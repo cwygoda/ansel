@@ -160,7 +160,7 @@ func newLocator(cmd *cobra.Command, write bool) (*application.Locator, func(), e
 	session := exiftool.New(cfg.ExiftoolBinary)
 	locator := &application.Locator{
 		Metadata: geoexiftool.New(session),
-		Writer:   geoexiftool.NewWriter(cfg.ExiftoolBinary),
+		Writer:   geoexiftool.NewWriter(session),
 		// Adding GPX or TCX support means adding its adapter here and
 		// nowhere else.
 		Decoders:   []ports.TrackDecoder{fitxz.New()},
