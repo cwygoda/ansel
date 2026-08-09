@@ -98,24 +98,24 @@ func printFlaggedSingles(result domain.CullResult) {
 }
 
 func printSidecarSummary(result domain.CullResult, write bool) {
-	existing := 0
+	rated := 0
 	for _, plan := range result.Sidecars {
-		if plan.Exists {
-			existing++
+		if plan.HasUserRating {
+			rated++
 		}
 	}
 
 	if !write {
-		fmt.Fprintf(os.Stdout, "  Would write: %d sidecars\n", len(result.Sidecars)-existing)
-		if existing > 0 {
-			fmt.Fprintf(os.Stdout, "    %d already exist and would be kept (use --force to replace)\n", existing)
+		fmt.Fprintf(os.Stdout, "  Would write: %d sidecars\n", len(result.Sidecars)-rated)
+		if rated > 0 {
+			fmt.Fprintf(os.Stdout, "    %d are already rated and would be kept (use --force to replace)\n", rated)
 		}
 		return
 	}
 
 	fmt.Fprintf(os.Stdout, "  Wrote: %d sidecars\n", result.Written)
 	if skipped := len(result.Sidecars) - result.Written; skipped > 0 {
-		fmt.Fprintf(os.Stdout, "    %d kept as they already exist (use --force to replace)\n", skipped)
+		fmt.Fprintf(os.Stdout, "    %d kept as they are already rated (use --force to replace)\n", skipped)
 	}
 }
 

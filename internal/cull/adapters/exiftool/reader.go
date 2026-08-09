@@ -9,6 +9,7 @@ package exiftool
 
 import (
 	"context"
+	"os"
 
 	"github.com/cwygoda/ansel/internal/cull/domain"
 	"github.com/cwygoda/ansel/internal/exiftool"
@@ -42,6 +43,30 @@ func (r *Reader) Read(ctx context.Context, paths []string) (map[string]domain.Me
 	return metadata, nil
 }
 
+// HasRating reports which sidecars already carry a rating. Files that do not
+// exist are skipped rather than queried, since a sidecar yet to be created
+// plainly holds no rating and exiftool would only complain.
+//
+// A rating of zero counts as absent. Zero stars means "not yet judged" in
+// every application that reads these files, which is exactly what a sidecar
+// holding only coordinates should look like.
+func (r *Reader) HasRating(ctx context.Context, paths []string) (map[string]bool, error) {
+	entries, err := r.session.Query(ctx, ratingTags(), existing(paths))
+	if err != nil {
+		return nil, err
+	}
+
+	rated := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		source := exiftool.AsString(entry["SourceFile"])
+		if source == "" {
+			continue
+		}
+		rated[source] = exiftool.AsInt(entry["Rating"]) > 0
+	}
+	return rated, nil
+}
+
 // captureTags lists exactly the tags the pipeline needs.
 func captureTags() []string {
 	return []string{
@@ -59,4 +84,18 @@ func captureTags() []string {
 		"-ImageWidth",
 		"-ImageHeight",
 	}
+}
+
+func ratingTags() []string {
+	return []string{"-SourceFile", "-XMP:Rating"}
+}
+
+func existing(paths []string) []string {
+	present := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			present = append(present, path)
+		}
+	}
+	return present
 }

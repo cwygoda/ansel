@@ -1,7 +1,7 @@
 package application
 
 import (
-	"os"
+	"context"
 	"path/filepath"
 	"strings"
 
@@ -16,19 +16,42 @@ func (c *Culler) planSidecars(images []domain.Image, ranks map[string]domain.Ran
 
 	for _, img := range images {
 		names := tagNames(tags[img.ID])
-		sidecarPath := SidecarPathFor(img.Path)
 		rating, label := c.ratingFor(ranks[img.ID], names)
 
 		plans = append(plans, domain.SidecarPlan{
 			ImagePath:   img.Path,
-			SidecarPath: sidecarPath,
+			SidecarPath: SidecarPathFor(img.Path),
 			Rating:      rating,
 			Label:       label,
 			Tags:        names,
-			Exists:      exists(sidecarPath),
 		})
 	}
 	return plans
+}
+
+// markRatedSidecars records which plans would land on a sidecar somebody has
+// already rated. It runs on dry runs too, so the report names the same files a
+// real run would leave alone.
+//
+// A sidecar that cannot be read is treated as unrated. The alternative is to
+// refuse to write over a file we know nothing about, which in practice would
+// mean refusing over an unreadable one — and losing the run's work to protect
+// a judgement that may not be there.
+func (c *Culler) markRatedSidecars(ctx context.Context, plans []domain.SidecarPlan) error {
+	paths := make([]string, 0, len(plans))
+	for _, plan := range plans {
+		paths = append(paths, plan.SidecarPath)
+	}
+
+	rated, err := c.Metadata.HasRating(ctx, paths)
+	if err != nil {
+		return err
+	}
+
+	for i := range plans {
+		plans[i].HasUserRating = rated[plans[i].SidecarPath]
+	}
+	return nil
 }
 
 // SidecarPathFor returns the XMP path beside a photograph: DSC_1234.NEF
@@ -73,9 +96,4 @@ func contains(names []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

@@ -23,7 +23,10 @@ var cullCmd = &cobra.Command{
 
 Photographs are never modified. Measurements go to a SQLite database and,
 when writing is enabled, ratings are written to XMP sidecars beside the
-originals.
+originals. A sidecar is updated in place, so coordinates written by
+'ansel geolocate' and anything your own application keeps there survive.
+A photograph you have already rated yourself is left alone unless --force
+is given.
 
 Each photograph is measured for sharpness, exposure and clipping using its
 embedded preview, so RAW files are never demosaiced. Frames close together in
@@ -80,7 +83,7 @@ func init() {
 
 	cullCmd.Flags().BoolVar(&cullDryRun, "dry-run", true, "Report what would be written without writing it")
 	cullCmd.Flags().BoolVar(&cullWrite, "write", false, "Write XMP sidecars (disables the default dry run)")
-	cullCmd.Flags().BoolVar(&cullForce, "force", false, "Replace XMP sidecars that already exist")
+	cullCmd.Flags().BoolVar(&cullForce, "force", false, "Replace ratings that are already present")
 	cullCmd.Flags().BoolVar(&cullReanalyze, "reanalyze", false, "Ignore cached results and measure everything again")
 	cullCmd.Flags().BoolVar(&cullJSON, "json", false, "Emit results as JSON, including rank scores and reasons")
 	cullCmd.Flags().StringVar(&cullDBPath, "db", "", "Analysis database path (overrides config)")

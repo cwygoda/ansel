@@ -11,6 +11,17 @@ import (
 // long-lived process than as one process per photograph.
 type MetadataReader interface {
 	Read(ctx context.Context, paths []string) (map[string]domain.Metadata, error)
+
+	// HasRating reports which of the given sidecars already carry a rating a
+	// photographer put there. It is asked about sidecar paths rather than
+	// photographs, and paths that do not exist yet are simply absent from the
+	// result.
+	//
+	// Mere existence is not the question. A sidecar holding only coordinates
+	// written by `ansel geolocate` is not a judgement anyone made about the
+	// photograph, and refusing to rate it would mean the two commands could
+	// not be run in both orders.
+	HasRating(ctx context.Context, paths []string) (map[string]bool, error)
 }
 
 // PreviewSource is a secondary port yielding the bytes of an analysis image:

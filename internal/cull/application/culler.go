@@ -59,6 +59,9 @@ func (c *Culler) Cull(ctx context.Context, root string) (domain.CullResult, erro
 	if err := c.persist(images, observations, result); err != nil {
 		return result, err
 	}
+	if err := c.markRatedSidecars(ctx, result.Sidecars); err != nil {
+		return result, fmt.Errorf("failed to inspect existing sidecars: %w", err)
+	}
 	if c.Write {
 		c.writeSidecars(ctx, &result)
 	}
@@ -133,14 +136,15 @@ func (c *Culler) persist(images []domain.Image, observations map[string]domain.O
 	return nil
 }
 
-// writeSidecars performs the run's only mutation. Existing sidecars are user
-// data — a photographer's own ratings live there — so they are preserved
-// unless overwriting was explicitly requested.
+// writeSidecars performs the run's only mutation. A rating already in a
+// sidecar is a judgement its photographer made, so it is preserved unless
+// overwriting was explicitly requested. Everything else in the file survives
+// regardless: the writer updates in place rather than replacing.
 func (c *Culler) writeSidecars(ctx context.Context, result *domain.CullResult) {
 	for i := range result.Sidecars {
 		plan := &result.Sidecars[i]
-		if plan.Exists && !c.Force {
-			plan.Skipped = "sidecar already exists"
+		if plan.HasUserRating && !c.Force {
+			plan.Skipped = "sidecar already carries a rating"
 			continue
 		}
 		if err := c.Sidecars.Write(ctx, *plan); err != nil {

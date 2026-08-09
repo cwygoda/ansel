@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -17,6 +18,19 @@ import (
 
 type fakeMetadata struct {
 	captureTimes map[string]time.Time
+
+	// ratedSidecars names sidecar paths a photographer has already rated.
+	ratedSidecars map[string]bool
+}
+
+func (f fakeMetadata) HasRating(_ context.Context, paths []string) (map[string]bool, error) {
+	rated := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		if f.ratedSidecars[path] {
+			rated[path] = true
+		}
+	}
+	return rated, nil
 }
 
 func (f fakeMetadata) Read(_ context.Context, paths []string) (map[string]domain.Metadata, error) {
@@ -193,8 +207,19 @@ func TestCullWriteEmitsSidecars(t *testing.T) {
 	}
 }
 
-// An existing sidecar is the photographer's own work; it must survive.
-func TestCullPreservesExistingSidecars(t *testing.T) {
+// rateSidecars tells the metadata fake that a photographer has already rated
+// the given sidecars.
+func rateSidecars(culler *Culler, paths ...string) {
+	metadata, _ := culler.Metadata.(fakeMetadata)
+	metadata.ratedSidecars = make(map[string]bool, len(paths))
+	for _, path := range paths {
+		metadata.ratedSidecars[path] = true
+	}
+	culler.Metadata = metadata
+}
+
+// A rating in a sidecar is the photographer's own judgement; it must survive.
+func TestCullPreservesRatedSidecars(t *testing.T) {
 	dir := shootDir(t)
 	existing := filepath.Join(dir, "DSC_0001.xmp")
 	if err := os.WriteFile(existing, []byte("original"), 0644); err != nil {
@@ -203,6 +228,7 @@ func TestCullPreservesExistingSidecars(t *testing.T) {
 
 	culler := newTestCuller(t, newFakeStore(), &fakeSidecars{})
 	culler.Write = true
+	rateSidecars(culler, existing)
 
 	result, err := culler.Cull(context.Background(), dir)
 	if err != nil {
@@ -214,14 +240,42 @@ func TestCullPreservesExistingSidecars(t *testing.T) {
 		t.Fatalf("failed to read sidecar: %v", err)
 	}
 	if string(content) != "original" {
-		t.Errorf("an existing sidecar was overwritten: %q", content)
+		t.Errorf("a rated sidecar was overwritten: %q", content)
 	}
 	if result.Written != 2 {
 		t.Errorf("wrote %d sidecars, expected 2 (one was kept)", result.Written)
 	}
 }
 
-func TestCullForceReplacesExistingSidecars(t *testing.T) {
+// The reported failure: `ansel geolocate --write` leaves a sidecar holding
+// coordinates and nothing else. Nobody has judged that photograph, so a cull
+// run afterwards must still rate it. Skipping on mere existence meant a shoot
+// could be geolocated or culled, but never both.
+func TestCullRatesASidecarThatOnlyHoldsCoordinates(t *testing.T) {
+	dir := shootDir(t)
+	located := filepath.Join(dir, "DSC_0001.xmp")
+	if err := os.WriteFile(located, []byte("<gps-only/>"), 0644); err != nil {
+		t.Fatalf("failed to seed sidecar: %v", err)
+	}
+
+	sidecars := &fakeSidecars{}
+	culler := newTestCuller(t, newFakeStore(), sidecars)
+	culler.Write = true
+
+	result, err := culler.Cull(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Written != 3 {
+		t.Errorf("wrote %d sidecars, expected all 3", result.Written)
+	}
+	if !slices.Contains(sidecars.written, located) {
+		t.Errorf("the geolocated sidecar was skipped; written: %v", sidecars.written)
+	}
+}
+
+func TestCullForceReplacesRatedSidecars(t *testing.T) {
 	dir := shootDir(t)
 	existing := filepath.Join(dir, "DSC_0001.xmp")
 	if err := os.WriteFile(existing, []byte("original"), 0644); err != nil {
@@ -231,6 +285,7 @@ func TestCullForceReplacesExistingSidecars(t *testing.T) {
 	culler := newTestCuller(t, newFakeStore(), &fakeSidecars{})
 	culler.Write = true
 	culler.Force = true
+	rateSidecars(culler, existing)
 
 	result, err := culler.Cull(context.Background(), dir)
 	if err != nil {

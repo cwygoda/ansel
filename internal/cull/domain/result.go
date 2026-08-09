@@ -88,9 +88,16 @@ type SidecarPlan struct {
 	Label       string
 	Tags        []string
 
-	// Exists reports that a sidecar is already on disk. Those are user data
-	// (Lightroom, Capture One) and are preserved unless overwriting is forced.
-	Exists  bool
+	// HasUserRating reports that the sidecar already holds a rating someone
+	// put there — a judgement made in Lightroom or Capture One, which is not
+	// this run's to overturn unless overwriting is forced.
+	//
+	// Existence alone is deliberately not the test. A sidecar carrying only
+	// coordinates from `ansel geolocate` has never been judged, and treating
+	// it as user data would mean a shoot could be geolocated or culled but
+	// never both.
+	HasUserRating bool
+
 	Written bool
 	Skipped string
 }
