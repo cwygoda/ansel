@@ -11,10 +11,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.0
 	github.com/bep/imagemeta v0.12.0
 	github.com/davidbyttow/govips/v2 v2.16.0
+	github.com/muktihari/fit v0.28.2
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
+	github.com/ulikunitz/xz v0.5.16
 	golang.ngrok.com/ngrok v1.12.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.27.0
 	modernc.org/sqlite v1.56.0
 )
@@ -53,7 +55,7 @@ require (
 	golang.org/x/image v0.34.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
