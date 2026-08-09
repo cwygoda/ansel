@@ -16,6 +16,7 @@ Features:
   - Linear light resizing using Magic Kernel Sharp 2021
   - Automatic framing with configurable colors and widths
   - Size presets for Instagram, Facebook, Twitter/X, YouTube, LinkedIn
+  - USB camera import with local bookmarks
   - High-quality JPEG output
 
 Named after Ansel Adams, the legendary photographer known for his

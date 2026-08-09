@@ -10,6 +10,7 @@ Named after [Ansel Adams](https://en.wikipedia.org/wiki/Ansel_Adams), the legend
 - **Automatic framing** with configurable colors and widths
 - **Size presets** for Instagram, Facebook, Twitter/X, YouTube, LinkedIn, and print
 - **High-quality JPEG output** with configurable quality
+- **USB camera import** for Nikon Z6 III and Ricoh GR IIIx with local bookmarks and day folders
 
 ## Installation
 
@@ -110,6 +111,43 @@ Supports hex colors and named colors:
 
 - Hex: `#fff`, `#ffffff`, `#ff0000`, `#rgba`
 - Named: `white`, `black`, `gray`, `red`, `green`, `blue`, `yellow`, `orange`, `purple`, `pink`, `cyan`, `magenta`, `navy`, `teal`, `olive`, `maroon`, `silver`, `lime`
+
+## Camera Import Command
+
+Import new photos from supported USB cameras into day-by-day folders.
+
+```bash
+ansel camera detect
+ansel camera import --dry-run
+ansel camera import
+```
+
+Supported cameras:
+
+- Nikon Z6 III
+- Ricoh GR IIIx
+
+By default, imports go to `~/Pictures/Ansel/Imports/YYYY-MM-DD/` and local bookmark state is stored in `~/.ansel/camera-import-state.json`.
+
+Optional configuration in `~/.ansel/config.toml`:
+
+```toml
+[camera_import]
+base_dir = "~/Pictures/Ansel/Imports"
+state_path = "~/.ansel/camera-import-state.json"
+backend = "gphoto2"
+folder_layout = "2006-01-02"
+include_extensions = [".jpg", ".jpeg", ".nef", ".dng", ".mov", ".mp4"]
+```
+
+On macOS, install a user-space LaunchAgent to run imports when a supported USB camera is attached:
+
+```bash
+ansel camera install-agent
+ansel camera uninstall-agent
+```
+
+The initial backend shells out to `gphoto2`; install it with `brew install gphoto2`.
 
 ## Publish Command
 
