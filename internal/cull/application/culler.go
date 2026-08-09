@@ -60,7 +60,7 @@ func (c *Culler) Cull(ctx context.Context, root string) (domain.CullResult, erro
 		return result, err
 	}
 	if c.Write {
-		c.writeSidecars(&result)
+		c.writeSidecars(ctx, &result)
 	}
 	return result, nil
 }
@@ -136,14 +136,14 @@ func (c *Culler) persist(images []domain.Image, observations map[string]domain.O
 // writeSidecars performs the run's only mutation. Existing sidecars are user
 // data — a photographer's own ratings live there — so they are preserved
 // unless overwriting was explicitly requested.
-func (c *Culler) writeSidecars(result *domain.CullResult) {
+func (c *Culler) writeSidecars(ctx context.Context, result *domain.CullResult) {
 	for i := range result.Sidecars {
 		plan := &result.Sidecars[i]
 		if plan.Exists && !c.Force {
 			plan.Skipped = "sidecar already exists"
 			continue
 		}
-		if err := c.Sidecars.Write(*plan); err != nil {
+		if err := c.Sidecars.Write(ctx, *plan); err != nil {
 			plan.Skipped = err.Error()
 			result.Failures = append(result.Failures, domain.Failure{
 				Path: plan.ImagePath, Stage: "sidecar", Err: err.Error(),

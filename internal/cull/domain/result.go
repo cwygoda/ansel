@@ -60,6 +60,24 @@ const (
 	TagTechnicalWarning  = "technical_warning"
 )
 
+// PolicyTags is the complete vocabulary above.
+//
+// A sidecar write withdraws every one of these before adding back the ones
+// that currently apply. That is how "replaces the tags contributed by one
+// source" reads in a file format with no notion of a source: naming the whole
+// vocabulary makes this run's contribution replaceable, while a keyword the
+// photographer wrote is never named and so never touched. Without it a frame
+// that was sharp last run and soft this one would end up carrying both.
+func PolicyTags() []string {
+	return []string{
+		TagSharp, TagSoft,
+		TagUnderexposed, TagOverexposed,
+		TagHighlightsClipped, TagShadowsClipped,
+		TagSimilarGroup, TagNearDuplicate, TagBestInGroup,
+		TagTechnicalWarning,
+	}
+}
+
 // SidecarPlan is one XMP sidecar the run intends to write. It is populated
 // whether or not writing is enabled, so a dry run reports exactly what a real
 // run would do.

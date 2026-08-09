@@ -93,7 +93,7 @@ type fakeSidecars struct {
 	written []string
 }
 
-func (f *fakeSidecars) Write(plan domain.SidecarPlan) error {
+func (f *fakeSidecars) Write(_ context.Context, plan domain.SidecarPlan) error {
 	f.written = append(f.written, plan.SidecarPath)
 	return os.WriteFile(plan.SidecarPath, []byte("<xmp/>"), 0644)
 }

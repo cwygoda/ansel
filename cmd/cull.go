@@ -10,7 +10,6 @@ import (
 	cullexiftool "github.com/cwygoda/ansel/internal/cull/adapters/exiftool"
 	"github.com/cwygoda/ansel/internal/cull/adapters/sqlite"
 	"github.com/cwygoda/ansel/internal/cull/adapters/vipsdecoder"
-	"github.com/cwygoda/ansel/internal/cull/adapters/xmp"
 	"github.com/cwygoda/ansel/internal/cull/application"
 	"github.com/cwygoda/ansel/internal/exiftool"
 	imglib "github.com/cwygoda/ansel/internal/image"
@@ -192,7 +191,7 @@ func newCuller(write bool) (*application.Culler, func(), error) {
 		Previews:  reader,
 		Decoder:   vipsdecoder.New(),
 		Store:     store,
-		Sidecars:  xmp.New(),
+		Sidecars:  cullexiftool.NewWriter(session),
 		Config:    cfg,
 		Write:     write,
 		Force:     cullForce,

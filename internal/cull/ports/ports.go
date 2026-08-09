@@ -49,6 +49,11 @@ type Store interface {
 
 // SidecarWriter is a secondary port for interoperable output. Implementations
 // must never modify the photograph itself.
+//
+// A sidecar is shared ground. `ansel geolocate` records coordinates in the
+// same file, and the photographer's own application may hold far more there.
+// Implementations must therefore preserve properties they were not asked to
+// change, rather than rendering the file from scratch.
 type SidecarWriter interface {
-	Write(plan domain.SidecarPlan) error
+	Write(ctx context.Context, plan domain.SidecarPlan) error
 }

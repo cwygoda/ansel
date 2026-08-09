@@ -419,7 +419,8 @@ func TestWriteLeavesSkippedPlansAlone(t *testing.T) {
 	}
 }
 
-// What `ansel cull --write` leaves beside a photograph.
+// A sidecar already carrying a rating, as `ansel cull --write` or the
+// photographer's own application leaves it.
 const culledSidecar = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="ansel cull">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
