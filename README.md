@@ -12,6 +12,7 @@ Named after [Ansel Adams](https://en.wikipedia.org/wiki/Ansel_Adams), the legend
 - **High-quality JPEG output** with configurable quality
 - **USB camera import** for Nikon Z6 III and Ricoh GR IIIx with local bookmarks and day folders
 - **Culling assistance** that scores sharpness and exposure, groups bursts, and picks the strongest frame — without touching your RAW files
+- **Geolocation** from GPS tracks, interpolating each frame's position along the route and correcting a drifted camera clock
 
 ## Installation
 
@@ -290,6 +291,121 @@ This is the technical stage: sharpness, exposure, clipping, near-duplicate group
 rule-based ranking. Face detection, eye-state analysis and learned image embeddings are
 deliberately not included yet. Grouping therefore handles bursts and near-duplicates
 well, and alternate compositions of the same subject less well.
+
+## Geolocate Command
+
+Place photographs on a recorded GPS track.
+
+```bash
+# Report only, writes nothing
+ansel geolocate ~/Pictures/shoot --track ride.fit.xz
+
+# Search a configured directory for recordings covering the shoot
+ansel geolocate ~/Pictures/shoot
+
+# Write XMP sidecars
+ansel geolocate ~/Pictures/shoot --track ride.fit.xz --write
+```
+
+Only xz-compressed Garmin FIT activity files are read today. Other formats are added as
+adapters without touching the matching logic.
+
+### How It Works
+
+Each photograph's capture time is resolved against the track. A frame taken exactly on a
+recorded point takes that position; one taken between points is interpolated along the
+**great circle** joining them, rather than by averaging coordinates. Devices drop to
+smart recording on straight sections — five-second gaps and longer are routine — and over
+those gaps straight-line coordinates visibly leave the road, increasingly so away from
+the equator. Elevation is interpolated linearly and only when both neighbouring points
+carry it.
+
+Two limits keep inference honest:
+
+- `--max-gap` (default 2m) is the widest spacing that may be interpolated across. A
+  device paused for an hour has not described where you went, and the frame is reported
+  rather than guessed at.
+- `--buffer` (default 5m) is how far outside a recording a frame may still be placed, at
+  its first or last point — for the shots taken while unpacking at the trailhead.
+
+Tracks are matched one at a time and never merged, so a photograph taken between the
+morning ride and the evening one is never placed halfway along the line joining them.
+
+### Timezones
+
+Cameras usually write the local wall clock with no zone; tracks record UTC. The zone is
+resolved in this order, and **never guessed from the machine you are sitting at**:
+
+1. the photograph's own `OffsetTimeOriginal`, when the camera recorded one
+2. the offset stated by the track itself — FIT files carry a local timestamp alongside
+   the UTC one, which is what makes the common case need no flags at all
+3. `--tz Europe/Berlin` or `--utc-offset +02:00`
+
+If none of those answer, the frame is reported as unlocated rather than placed somewhere
+plausible but wrong. Prefer `--tz` over `--utc-offset`: a named zone knows when summer
+time started.
+
+### Drift
+
+`--drift` is how far the camera clock runs **ahead** of true time. A camera reading
+20:30:54 when it was really 20:29:24 has drifted 90 seconds:
+
+```bash
+ansel geolocate ~/Pictures/shoot --track ride.fit.xz --drift 90s --write
+```
+
+A camera running slow takes a negative value (`--drift -90s`). The correction shifts the
+position lookup and the photograph's own `DateTimeOriginal` and `CreateDate` by the same
+amount, so place and time can never disagree. The corrected timestamp stays in the zone
+the camera was set to. Without `--drift`, timestamps are left exactly as written.
+
+### Safety
+
+Nothing is written unless you ask for it; the default run reports exactly what a real one
+would do. Positions go to XMP sidecars beside the originals, so **the photographs
+themselves are not modified** — the same stance `cull` takes. Sidecars are updated rather
+than replaced, so ratings and labels written by `ansel cull` survive.
+
+`--in-place` opts out of that and embeds EXIF GPS into the photographs themselves. It
+requires `--write`.
+
+Coordinates already present are treated as user data and kept unless you pass `--force`.
+
+### Flags
+
+| Flag           | Description                                                      | Default |
+| -------------- | ---------------------------------------------------------------- | ------- |
+| `--track`      | Track file, glob or directory (repeatable)                       |         |
+| `--drift`      | How far the camera clock runs ahead of true time                 | `0`     |
+| `--max-gap`    | Largest track gap to interpolate across                          | `2m`    |
+| `--buffer`     | How far outside a track photographs may still be placed          | `5m`    |
+| `--tz`         | Camera timezone, e.g. `Europe/Berlin`                            |         |
+| `--utc-offset` | Camera clock UTC offset, e.g. `+02:00`                           |         |
+| `--tracks-dir` | Directory to search when no `--track` is given                   |         |
+| `--dry-run`    | Report without writing                                           | `true`  |
+| `--write`      | Write coordinates                                                | `false` |
+| `--in-place`   | Embed into the photographs instead of sidecars                   | `false` |
+| `--force`      | Replace coordinates already present                              | `false` |
+| `--json`       | Emit results as JSON, including how each position was derived    | `false` |
+
+### Configuration
+
+```toml
+[geolocate]
+# Searched when no --track is given. Unset by default, which disables the search.
+tracks_dir = "~/Documents/Activities"
+
+max_gap_seconds = 120
+buffer_seconds = 300
+
+# Last resort only; the photograph and the track are both consulted first.
+timezone = "Europe/Berlin"
+```
+
+Track files are matched by the date in their filename before any are opened, so pointing
+`tracks_dir` at years of recordings stays fast.
+
+Requires `exiftool` (`brew install exiftool`).
 
 ## Publish Command
 
