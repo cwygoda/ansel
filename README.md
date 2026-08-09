@@ -11,6 +11,7 @@ Named after [Ansel Adams](https://en.wikipedia.org/wiki/Ansel_Adams), the legend
 - **Size presets** for Instagram, Facebook, Twitter/X, YouTube, LinkedIn, and print
 - **High-quality JPEG output** with configurable quality
 - **USB camera import** for Nikon Z6 III and Ricoh GR IIIx with local bookmarks and day folders
+- **Culling assistance** that scores sharpness and exposure, groups bursts, and picks the strongest frame — without touching your RAW files
 
 ## Installation
 
@@ -148,6 +149,147 @@ ansel camera uninstall-agent
 ```
 
 The initial backend shells out to `gphoto2`; install it with `brew install gphoto2`.
+
+## Cull Command
+
+Analyze a shoot, group near-identical frames, and rank each group so the strongest
+frame is easy to find.
+
+```bash
+ansel cull [flags] [directory]
+```
+
+Requires `exiftool`; install it with `brew install exiftool`.
+
+**Nothing is written unless you ask.** By default `cull` reports exactly what a real
+run would do and changes nothing on disk:
+
+```bash
+ansel cull ~/Pictures/Ansel/Imports/2026-08-09
+```
+
+```text
+2026-08-09: 412 images, 47 groups
+  Analyzed: 412 (reused 0)
+
+  g4a7b71-0007  6 frames  burst
+    ★ DSC_1234.NEF             0.91  sharp, similar_group, best_in_group
+      DSC_1235.NEF             0.74  sharp, similar_group
+      DSC_1236.NEF             0.31  soft, similar_group, technical_warning
+
+  Flagged: 12
+    DSC_1301.NEF             soft, technical_warning
+
+  Would write: 47 sidecars
+    10 already exist and would be kept (use --force to replace)
+```
+
+Add `--write` to emit XMP sidecars beside the originals:
+
+```bash
+ansel cull --write ~/Pictures/Ansel/Imports/2026-08-09
+```
+
+### How It Works
+
+Each photograph is measured through its **embedded preview**, so RAW files are read
+but never demosaiced and never modified. Sharpness (variance of Laplacian and
+Tenengrad), luminance distribution, and highlight/shadow clipping are recorded, along
+with a perceptual hash.
+
+Frames close together in capture time *and* visually alike are grouped. Candidates are
+compared against the group's medoid rather than their nearest neighbour, so a run of
+gradually changing frames is not chained into one oversized group.
+
+Ranking is **group-relative**: the question answered is "which of these six frames is
+strongest", not "is this objectively a good photograph". Every placement carries its
+reasoning, visible with `--json`.
+
+Two details worth knowing:
+
+- **Sharpness is ranked against comparable frames only.** A camera's embedded RAW
+  preview carries far less sharpening than a delivered JPEG — the same photograph can
+  differ more than twentyfold — so RAW and rendered files are scored in separate
+  populations.
+- **Ranking low is not by itself a defect.** A quarter of any shoot sits in the bottom
+  quarter. A frame is only called `soft` when it also has measurably less detail than a
+  typical frame, so a uniformly sharp shoot reports nothing soft.
+
+### Safety
+
+- RAW and JPEG originals are never modified.
+- Existing `.xmp` sidecars are **preserved**, since they may hold your own ratings.
+  `--force` replaces them.
+- Sidecars are written atomically, so an interrupted run leaves no partial file.
+- Results are cached in SQLite; re-running skips unchanged files.
+
+### Flags
+
+| Flag             | Default | Description                                          |
+| ---------------- | ------- | ---------------------------------------------------- |
+| `--dry-run`      | `true`  | Report what would be written without writing it      |
+| `--write`        | `false` | Write XMP sidecars (disables the default dry run)    |
+| `--force`        | `false` | Replace XMP sidecars that already exist              |
+| `--reanalyze`    | `false` | Ignore cached results and measure everything again   |
+| `--json`         | `false` | Emit results as JSON, with rank scores and reasons   |
+| `--db`           | config  | Analysis database path                               |
+| `--exiftool`     | config  | Path to the exiftool binary                          |
+| `--workers`      | CPUs    | Concurrent analysis workers                          |
+| `--max-edge`     | `2048`  | Longest edge of the analysis preview, in pixels      |
+| `--group-window` | `8`     | Seconds between frames to consider them related      |
+
+`--write` and `--dry-run=true` together are rejected rather than silently resolved.
+
+### Configuration
+
+Every threshold lives in `~/.ansel/config.toml` and can be tuned without rebuilding.
+Changing a threshold recomputes tags without re-measuring pixels.
+
+```toml
+[cull]
+db_path = "~/.ansel/cull.db"
+include_extensions = [".nef", ".jpg", ".jpeg"]
+max_preview_edge = 2048
+
+[cull.similarity]
+window_seconds = 8
+max_distance = 10
+max_diameter = 14
+burst_gap_seconds = 1.5
+
+[cull.ranking.weights]
+sharpness = 0.30
+exposure = 0.15
+
+[cull.ranking.penalties]
+severe_blur = 0.30
+severe_highlight_clipping = 0.10
+
+[cull.policy]
+sharp_above = 0.65
+soft_below = 0.25
+soft_relative_below = 0.5
+
+[cull.sidecar]
+rating_best = 5
+label_best = "green"
+label_warning = "red"
+```
+
+Analysis is stored in SQLite and is queryable directly, so any tag can be traced back
+to the numbers behind it:
+
+```bash
+sqlite3 ~/.ansel/cull.db \
+  "SELECT i.path, o.key, o.value FROM observations o JOIN images i ON i.id = o.image_id;"
+```
+
+### Scope
+
+This is the technical stage: sharpness, exposure, clipping, near-duplicate grouping and
+rule-based ranking. Face detection, eye-state analysis and learned image embeddings are
+deliberately not included yet. Grouping therefore handles bursts and near-duplicates
+well, and alternate compositions of the same subject less well.
 
 ## Publish Command
 
