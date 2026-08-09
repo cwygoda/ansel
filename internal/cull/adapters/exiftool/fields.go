@@ -1,12 +1,11 @@
 package exiftool
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cwygoda/ansel/internal/cull/domain"
+	"github.com/cwygoda/ansel/internal/exiftool"
 )
 
 // timeLayouts covers what EXIF timestamps look like in practice: the base
@@ -22,14 +21,14 @@ func metadataFrom(entry map[string]any) domain.Metadata {
 	return domain.Metadata{
 		CaptureTime:    captureTimeFrom(entry),
 		Camera:         cameraFrom(entry),
-		Lens:           asString(entry["LensModel"]),
-		FocalLength:    asFloat(entry["FocalLength"]),
-		Aperture:       asFloat(entry["FNumber"]),
-		ShutterSeconds: asFloat(entry["ExposureTime"]),
-		ISO:            asInt(entry["ISO"]),
-		Orientation:    asInt(entry["Orientation"]),
-		Width:          asInt(entry["ImageWidth"]),
-		Height:         asInt(entry["ImageHeight"]),
+		Lens:           exiftool.AsString(entry["LensModel"]),
+		FocalLength:    exiftool.AsFloat(entry["FocalLength"]),
+		Aperture:       exiftool.AsFloat(entry["FNumber"]),
+		ShutterSeconds: exiftool.AsFloat(entry["ExposureTime"]),
+		ISO:            exiftool.AsInt(entry["ISO"]),
+		Orientation:    exiftool.AsInt(entry["Orientation"]),
+		Width:          exiftool.AsInt(entry["ImageWidth"]),
+		Height:         exiftool.AsInt(entry["ImageHeight"]),
 	}
 }
 
@@ -37,7 +36,7 @@ func metadataFrom(entry map[string]any) domain.Metadata {
 // over CreateDate, which some pipelines rewrite.
 func captureTimeFrom(entry map[string]any) time.Time {
 	for _, key := range []string{"DateTimeOriginal", "CreateDate"} {
-		if parsed, ok := parseTime(asString(entry[key])); ok {
+		if parsed, ok := parseTime(exiftool.AsString(entry[key])); ok {
 			return parsed
 		}
 	}
@@ -45,7 +44,7 @@ func captureTimeFrom(entry map[string]any) time.Time {
 }
 
 func cameraFrom(entry map[string]any) string {
-	maker, model := asString(entry["Make"]), asString(entry["Model"])
+	maker, model := exiftool.AsString(entry["Make"]), exiftool.AsString(entry["Model"])
 	switch {
 	case maker == "":
 		return model
@@ -70,38 +69,4 @@ func parseTime(value string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
-}
-
-// asString coerces a JSON value that exiftool may report as a string or a
-// number depending on the tag and the file.
-func asString(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
-func asFloat(value any) float64 {
-	switch typed := value.(type) {
-	case float64:
-		return typed
-	case string:
-		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
-		if err != nil {
-			return 0
-		}
-		return parsed
-	default:
-		return 0
-	}
-}
-
-func asInt(value any) int {
-	return int(asFloat(value))
 }

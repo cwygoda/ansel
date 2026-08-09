@@ -1,11 +1,9 @@
 package exiftool
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -52,18 +50,9 @@ func (r *Reader) extractEmbedded(ctx context.Context, path string) ([]byte, erro
 	return nil, fmt.Errorf("no embedded preview found in %s", path)
 }
 
-// runBinary asks exiftool for one binary tag. This runs as its own process
-// rather than through the stay_open stream, because binary payloads cannot be
-// framed against the textual ready marker.
+// runBinary asks exiftool for one binary tag. The session runs this in its own
+// process rather than through the stay_open stream, because binary payloads
+// cannot be framed against the textual ready marker.
 func (r *Reader) runBinary(ctx context.Context, tag, path string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, r.binary, "-b", "-"+tag, path)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s -b -%s failed: %w\n%s",
-			r.binary, tag, err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
+	return r.session.RunBinary(ctx, "-b", "-"+tag, path)
 }

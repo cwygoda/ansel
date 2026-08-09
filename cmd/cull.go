@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cwygoda/ansel/internal/cull/adapters/exiftool"
+	cullexiftool "github.com/cwygoda/ansel/internal/cull/adapters/exiftool"
 	"github.com/cwygoda/ansel/internal/cull/adapters/sqlite"
 	"github.com/cwygoda/ansel/internal/cull/adapters/vipsdecoder"
 	"github.com/cwygoda/ansel/internal/cull/adapters/xmp"
 	"github.com/cwygoda/ansel/internal/cull/application"
+	"github.com/cwygoda/ansel/internal/exiftool"
 	imglib "github.com/cwygoda/ansel/internal/image"
 	"github.com/spf13/cobra"
 )
@@ -179,7 +180,12 @@ func newCuller(write bool) (*application.Culler, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	reader := exiftool.New(cfg.ExiftoolBinary)
+
+	// One exiftool process serves the whole run. Reading and writing both go
+	// through it, so the shoot pays for a single startup rather than one per
+	// photograph.
+	session := exiftool.New(cfg.ExiftoolBinary)
+	reader := cullexiftool.New(session)
 
 	culler := &application.Culler{
 		Metadata:  reader,
@@ -194,7 +200,7 @@ func newCuller(write bool) (*application.Culler, func(), error) {
 	}
 
 	return culler, func() {
-		_ = reader.Close()
+		_ = session.Close()
 		_ = store.Close()
 	}, nil
 }

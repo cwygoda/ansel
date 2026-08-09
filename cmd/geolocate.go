@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cwygoda/ansel/internal/geolocate/adapters/exiftool"
+	"github.com/cwygoda/ansel/internal/exiftool"
+	geoexiftool "github.com/cwygoda/ansel/internal/geolocate/adapters/exiftool"
 	"github.com/cwygoda/ansel/internal/geolocate/adapters/fitxz"
 	"github.com/cwygoda/ansel/internal/geolocate/application"
 	"github.com/cwygoda/ansel/internal/geolocate/matching"
@@ -155,10 +156,11 @@ func newLocator(cmd *cobra.Command, write bool) (*application.Locator, func(), e
 		return nil, nil, err
 	}
 
-	reader := exiftool.New(cfg.ExiftoolBinary)
+	// One exiftool process serves the whole run, reading and writing alike.
+	session := exiftool.New(cfg.ExiftoolBinary)
 	locator := &application.Locator{
-		Metadata: reader,
-		Writer:   exiftool.NewWriter(cfg.ExiftoolBinary),
+		Metadata: geoexiftool.New(session),
+		Writer:   geoexiftool.NewWriter(cfg.ExiftoolBinary),
 		// Adding GPX or TCX support means adding its adapter here and
 		// nowhere else.
 		Decoders:   []ports.TrackDecoder{fitxz.New()},
@@ -172,7 +174,7 @@ func newLocator(cmd *cobra.Command, write bool) (*application.Locator, func(), e
 		Force:      geolocateForce,
 	}
 
-	return locator, func() { _ = reader.Close() }, nil
+	return locator, func() { _ = session.Close() }, nil
 }
 
 // matchingOptions applies the flags over the config. Both limits are read via

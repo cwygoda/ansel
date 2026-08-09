@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwygoda/ansel/internal/exiftool"
 	"github.com/cwygoda/ansel/internal/geolocate/domain"
 )
 
@@ -27,9 +28,9 @@ var zonedLayouts = []string{
 
 // clockFrom builds a capture clock from one exiftool JSON entry.
 func clockFrom(entry map[string]any) domain.CaptureClock {
-	clock, ok := parseWall(asString(entry["DateTimeOriginal"]))
+	clock, ok := parseWall(exiftool.AsString(entry["DateTimeOriginal"]))
 	if !ok {
-		clock, ok = parseWall(asString(entry["CreateDate"]))
+		clock, ok = parseWall(exiftool.AsString(entry["CreateDate"]))
 		if !ok {
 			return domain.CaptureClock{}
 		}
@@ -38,9 +39,9 @@ func clockFrom(entry map[string]any) domain.CaptureClock {
 	// An offset carried inside the timestamp already won; only consult the
 	// dedicated tags when it did not.
 	if !clock.HasOffset {
-		if offset, found := parseOffset(asString(entry["OffsetTimeOriginal"])); found {
+		if offset, found := parseOffset(exiftool.AsString(entry["OffsetTimeOriginal"])); found {
 			clock.Offset, clock.HasOffset = offset, true
-		} else if offset, found := parseOffset(asString(entry["OffsetTime"])); found {
+		} else if offset, found := parseOffset(exiftool.AsString(entry["OffsetTime"])); found {
 			clock.Offset, clock.HasOffset = offset, true
 		}
 	}
@@ -107,17 +108,4 @@ func formatOffset(offset time.Duration) string {
 		sign, offset = "-", -offset
 	}
 	return fmt.Sprintf("%s%02d:%02d", sign, int(offset.Hours()), int(offset.Minutes())%60)
-}
-
-func asString(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	case nil:
-		return ""
-	default:
-		return fmt.Sprintf("%v", typed)
-	}
 }
