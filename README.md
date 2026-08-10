@@ -20,13 +20,27 @@ Named after [Ansel Adams](https://en.wikipedia.org/wiki/Ansel_Adams), the legend
 go install github.com/cwygoda/ansel@latest
 ```
 
-Or build from source:
+Or build from source. [mise](https://mise.jdx.dev/) pins the toolchain and
+[Task](https://taskfile.dev/) runs the jobs:
 
 ```bash
 git clone https://github.com/cwygoda/ansel.git
 cd ansel
-go build -o ansel .
+mise install      # Go, golangci-lint and task, as pinned in mise.toml
+task deps:check   # Reports any missing Homebrew dependency
+task build
 ```
+
+Some tools cannot come from mise and are installed with Homebrew:
+
+```bash
+brew install vips exiftool gphoto2
+```
+
+`vips` is required to build — `govips` is cgo and links against libvips. `exiftool` is
+needed by `cull` and `geolocate`, `gphoto2` by `camera import`.
+
+Without mise, a `go build -o ansel .` against Go 1.25 or newer works the same.
 
 ## Usage
 
@@ -493,7 +507,9 @@ The Magic Kernel Sharp 2021 algorithm combines this with optimized sharpening to
 ## Testing
 
 ```bash
-go test ./...
+task test    # go test ./...
+task lint    # golangci-lint run
+task check   # formatting, lint and tests together
 ```
 
 ### Test Data

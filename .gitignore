@@ -18,3 +18,12 @@ ansel
 
 # Test output images
 testdata/output/
+
+# Agent notes
+notes
+
+# Personal mise overrides
+mise.local.toml
+
+# Task's up-to-date checksum cache
+.task/

@@ -1,0 +1,87 @@
+version: "3"
+
+vars:
+  BINARY: ansel
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the ansel binary
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BINARY}}"
+    cmds:
+      - go build -o {{.BINARY}} .
+
+  test:
+    desc: 'Run all tests; narrow with: task test -- -run TestName ./internal/image/'
+    cmds:
+      - go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run {{.CLI_ARGS}}
+
+  fmt:
+    desc: Format with gofumpt + goimports, via golangci-lint
+    cmds:
+      - golangci-lint fmt
+
+  fmt:check:
+    desc: Fail if formatting is not applied
+    cmds:
+      - golangci-lint fmt --diff
+
+  tidy:
+    desc: Tidy go.mod/go.sum
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Format check, lint and test
+    cmds:
+      - task: fmt:check
+      - task: lint
+      - task: test
+
+  deps:check:
+    desc: Verify the native tools mise cannot install
+    silent: true
+    cmds:
+      - cmd: |
+          missing=0
+
+          require() {
+            binary="$1" formula="$2" used_by="$3"
+            if command -v "$binary" >/dev/null 2>&1; then
+              printf '  ok      %-10s %s\n' "$binary" "$(command -v "$binary")"
+            else
+              printf '  MISSING %-10s needed by %s -- brew install %s\n' "$binary" "$used_by" "$formula"
+              missing=1
+            fi
+          }
+
+          echo "native dependencies (not managed by mise):"
+          require vips vips "internal/image (govips, cgo)"
+          require exiftool exiftool "cull, geolocate"
+          require gphoto2 gphoto2 "camera import"
+
+          if ! pkg-config --exists vips 2>/dev/null; then
+            echo "  MISSING libvips pkg-config -- brew install vips"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo
+            echo "install the missing formulae before building"
+            exit 1
+          fi

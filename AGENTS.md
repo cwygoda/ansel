@@ -4,16 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Test Commands
 
+`mise.toml` pins the toolchain (Go, `golangci-lint`, `task`) — run `mise install` once.
+`Taskfile.yml` holds every task; mise installs, Task runs.
+
 ```bash
-go build -o ansel .      # Build binary
-go test ./...            # Run all tests
-go test ./cmd/...        # Run CLI tests only
-go test ./internal/...   # Run library tests only
-go test -run TestName    # Run specific test
+task                     # List available tasks
+task build               # Build binary
+task test                # Run all tests
+task lint                # golangci-lint run
+task fmt                 # gofumpt + goimports, via golangci-lint fmt
+task check               # fmt:check + lint + test
+task deps:check          # Verify the native tools mise cannot install
+```
+
+Everything after `--` replaces the default `go test` arguments:
+
+```bash
+task test -- ./cmd/...                            # Run CLI tests only
+task test -- ./internal/...                       # Run library tests only
+task test -- -run TestName ./internal/image/      # Run specific test
 ```
 
 External tools some commands shell out to: `vips`/`vipsheader` (libvips), `gphoto2`
-(camera import), `exiftool` (cull, geolocate).
+(camera import), `exiftool` (cull, geolocate). These are C/Perl programs with no mise
+registry entry, so they stay on Homebrew — `task deps:check` reports which are
+missing and the formula to install. libvips is also a build-time dependency: `govips`
+is cgo and links against it.
 
 ## Architecture
 

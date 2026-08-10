@@ -1,0 +1,8 @@
+[tools]
+go = "1.26.5"
+golangci-lint = "2.12.2"
+task = "3.52.0"
+
+[env]
+# govips is cgo; keep the build pointed at Homebrew's libvips.
+CGO_ENABLED = "1"
