@@ -1,41 +1,21 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this
+repository.
 
-## Build & Test Commands
+**Read [CONTRIBUTING.md](CONTRIBUTING.md) first.** Setup, the task runner, the golden
+rules this codebase holds itself to, code conventions and testing style all live there and
+are not repeated here. This file covers what is left: where things are, and why the
+non-obvious parts are the way they are.
 
-`mise.toml` pins the toolchain (Go, `golangci-lint`, `task`) — run `mise install` once.
-`Taskfile.yml` holds every task; mise installs, Task runs.
-
-```bash
-task                     # List available tasks
-task build               # Build binary
-task install             # Build and install into ~/.local/bin
-task test                # Run all tests
-task lint                # golangci-lint run
-task fmt                 # gofumpt + goimports, via golangci-lint fmt
-task check               # fmt:check + lint + test
-task deps:check          # Verify the native tools mise cannot install
-```
-
-Everything after `--` replaces the default `go test` arguments:
-
-```bash
-task test -- ./cmd/...                            # Run CLI tests only
-task test -- ./internal/...                       # Run library tests only
-task test -- -run TestName ./internal/image/      # Run specific test
-```
-
-External tools some commands shell out to: `vips`/`vipsheader` (libvips), `gphoto2`
-(camera import), `exiftool` (cull, geolocate). These are C/Perl programs with no mise
-registry entry, so they stay on Homebrew — `task deps:check` reports which are
-missing and the formula to install. libvips is also a build-time dependency: `govips`
-is cgo and links against it.
+Quick reference: `task build`, `task test`, `task lint`, `task check`. Narrow a test run
+with `task test -- -run TestName ./internal/image/`.
 
 ## Architecture
 
-Ansel is a CLI for photographers: it resizes and frames images, imports from USB
-cameras, assists culling, and publishes to a CDN. It uses Cobra for CLI handling.
+Ansel is a CLI for photographers: it imports from USB cameras, assists culling, places
+photographs on GPS tracks, resizes and frames images, and publishes to a CDN. It uses
+Cobra for CLI handling.
 
 ### Package Structure
 
@@ -46,7 +26,7 @@ cameras, assists culling, and publishes to a CDN. It uses Cobra for CLI handling
   - `camera.go` — USB camera detection and import, plus the launchd agent
   - `cull.go`, `cull_report.go` — Culling pipeline and its output rendering
   - `geolocate.go`, `geolocate_report.go` — GPS track matching and its output rendering
-  - `ig.go` — Instagram posting (undocumented in README)
+  - `ig.go` — Instagram posting
   - `publish.go` — CloudFormation-backed static site publishing
 
 - **`internal/image/`** — libvips-backed image library (`github.com/davidbyttow/govips/v2`)
@@ -57,35 +37,12 @@ cameras, assists culling, and publishes to a CDN. It uses Cobra for CLI handling
   - `metadata.go` — `ReadIPTCHeadline`, DXO `.dop` sidecar reading
   - `analysis.go` — `LoadVipsBuffer`, `Grayscale` for the cull pipeline
 
-- **`internal/camera/`**, **`internal/cull/`**, **`internal/geolocate/`** — hexagonal,
-  see below
+- **`internal/camera/`**, **`internal/cull/`**, **`internal/geolocate/`** — hexagonal;
+  the layout and its rules are golden rules 4-6 in CONTRIBUTING.md
+- **`internal/exiftool/`** — the shared long-lived `-stay_open` session used by cull and
+  geolocate
 - **`internal/config/`** — `~/.ansel/config.toml` access, `ExpandPath`
 - **`internal/publish/`**, **`internal/instagram/`**, **`internal/tunnel/`**, **`internal/nanoid/`**
-
-### Hexagonal Structure (required for new commands)
-
-`internal/camera/`, `internal/cull/` and `internal/geolocate/` all use ports and adapters.
-**New commands must follow the same layout:**
-
-```text
-internal/<feature>/
-├── domain/      pure types, stdlib imports only
-├── ports/       secondary port interfaces, imports domain only
-├── application/ orchestrator holding ports as interface-typed fields; own TOML config
-└── adapters/    one package per external dependency
-```
-
-Rules:
-
-- Dependencies point inward: `adapters → ports → domain`, `application → ports → domain`.
-- `application` never imports an adapter.
-- `cmd/` is the only place concrete adapters are constructed.
-- A third-party client type never appears in `domain` or `ports`. No `govips` outside
-  `internal/image`, no `modernc.org/sqlite` outside `internal/cull/adapters/sqlite`.
-
-Each feature loads its own config section (`[camera_import]`, `[cull]`, `[geolocate]`)
-with a defaults-then-overlay merge, treating a missing file as "use defaults". Do **not**
-route through `config.Load()` — its `Validate()` requires Instagram credentials.
 
 ## Key Concepts
 
@@ -106,6 +63,10 @@ ranked only against comparable frames (embedded RAW previews are scored separate
 rendered JPEGs, since they differ by more than an order of magnitude). Originals are
 never modified; SQLite is authoritative and XMP sidecars are a projection.
 
+Writing skips a sidecar that already carries a rating, not one that merely exists — a
+sidecar holding only coordinates from `ansel geolocate` must still receive its rating, and
+a rating of zero counts as absent.
+
 Design notes live in `notes/culling/architecture.md` (gitignored).
 
 **Geolocation**: photographs are matched to GPS tracks by time. Position between recorded
@@ -125,10 +86,6 @@ tolerable for grouping bursts by their spacing and wrong for geolocation, which 
 `internal/geolocate` has its own reader returning `domain.CaptureClock` with the reading
 and its offset kept apart. The two readers are deliberately not shared.
 
-`ansel geolocate --in-place` is the **only** code path in this repository that modifies a
-photograph. It is opt-in, requires `--write`, and everything else — including geolocate's
-own default — still writes sidecars only. Do not widen that exception casually.
-
 Geolocate writes through exiftool for sidecars as well as in-place, rather than rendering
 XMP like cull does, because it targets the same `<basename>.xmp` cull writes and must not
 destroy the ratings in it. The two targets need genuinely different tags: EXIF splits
@@ -136,13 +93,3 @@ magnitude from hemisphere and date from time and has `OffsetTimeOriginal`; XMP f
 hemisphere into the value, keeps one `GPSDateTime`, and carries the zone inside the
 timestamp. Unqualified tag names let exiftool pick a group, which for a JPEG silently
 means writing XMP instead of EXIF — so every tag is written group-qualified.
-
-## Conventions
-
-- Errors wrapped with `fmt.Errorf("...: %w", err)`; lowercase, actionable messages.
-- Output via `fmt.Fprintf(os.Stdout, ...)` / `os.Stderr` with two-space indent nesting.
-  No logger. `ANSEL_LOG_LEVEL` gates vips and metadata debug output.
-- Commands use `RunE`, package-level `var xxxCmd`, and register in `init()`.
-- Batch operations are best-effort: report the failure, continue, return nil.
-- Tests are stdlib table-driven with `t.Run` subtests. No testify. CLI tests target pure
-  helper functions rather than executing Cobra commands.
