@@ -31,6 +31,9 @@ task deps:check   # Reports any missing Homebrew dependency
 task build
 ```
 
+`task install` builds and drops the binary into `~/.local/bin`; set `INSTALL_DIR` to
+put it somewhere else.
+
 Some tools cannot come from mise and are installed with Homebrew:
 
 ```bash

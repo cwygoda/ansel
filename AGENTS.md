@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 task                     # List available tasks
 task build               # Build binary
+task install             # Build and install into ~/.local/bin
 task test                # Run all tests
 task lint                # golangci-lint run
 task fmt                 # gofumpt + goimports, via golangci-lint fmt

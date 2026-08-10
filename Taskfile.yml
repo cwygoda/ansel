@@ -21,6 +21,22 @@ tasks:
     cmds:
       - go build -o {{.BINARY}} .
 
+  install:
+    desc: Build and install into ~/.local/bin (override with INSTALL_DIR)
+    deps: [build]
+    silent: true
+    cmds:
+      - cmd: |
+          target="${INSTALL_DIR:-$HOME/.local/bin}"
+          mkdir -p "$target"
+          install -m 0755 {{.BINARY}} "$target/{{.BINARY}}"
+          echo "installed $target/{{.BINARY}}"
+
+          case ":$PATH:" in
+            *":$target:"*) ;;
+            *) echo "warning: $target is not on your PATH" ;;
+          esac
+
   test:
     desc: 'Run all tests; narrow with: task test -- -run TestName ./internal/image/'
     cmds:
