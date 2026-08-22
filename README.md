@@ -59,8 +59,9 @@ explore before committing to them.
 
 ## Camera Import
 
-Import new photos from supported USB cameras into day-by-day folders. Each camera's last
-import is bookmarked locally, so re-running picks up only what is new.
+Import new photos from supported USB cameras or mounted camera cards into day-by-day
+folders. Each camera/card import is bookmarked locally, so re-running picks up only what
+is new.
 
 ```bash
 ansel camera detect          # What is attached?
@@ -68,8 +69,10 @@ ansel camera import --dry-run
 ansel camera import
 ```
 
-Supported cameras: **Nikon Z6 III** and **Ricoh GR IIIx**. Anything else is skipped unless
-you pass `--include-unknown`.
+Supported cameras: **Nikon Z6 III** and **Ricoh GR IIIx**. Mounted cards are detected by
+a `DCIM` directory under a card root such as `/Volumes`, which covers a CFExpress card in
+a USB-C reader. On macOS, known camera cards attached but not mounted yet are mounted
+read-only before scanning. Anything else is skipped unless you pass `--include-unknown`.
 
 Imports go to `~/Pictures/Ansel/Imports/YYYY-MM-DD/` and bookmark state lives in
 `~/.ansel/camera-import-state.json`.
@@ -78,18 +81,20 @@ Imports go to `~/Pictures/Ansel/Imports/YYYY-MM-DD/` and bookmark state lives in
 
 | Flag                | Default    | Description                                          |
 | ------------------- | ---------- | ---------------------------------------------------- |
-| `--dry-run`         | `false`    | Plan imports without downloading                     |
-| `--include-unknown` | `false`    | Import from cameras not recognized as Z6 III / GR IIIx |
-| `--base-dir`        | config     | Base import directory                                |
-| `--state`           | config     | Bookmark state path                                  |
-| `--gphoto2`         | `gphoto2`  | Path to the gphoto2 binary                           |
+| `--dry-run`         | `false`    | Plan imports without downloading                       |
+| `--include-unknown` | `false`    | Import from cameras/cards not recognized as Z6 III / GR IIIx |
+| `--base-dir`        | config     | Base import directory                                  |
+| `--state`           | config     | Bookmark state path                                    |
+| `--backend`         | config     | Import backend: `auto`, `gphoto2`, or `card`            |
+| `--card-root`       | config     | Root directory to scan for mounted cards; repeatable    |
+| `--gphoto2`         | `gphoto2`  | Path to the gphoto2 binary                             |
 
-`ansel camera detect` takes `--gphoto2` only.
+`ansel camera detect` takes `--backend`, `--card-root`, and `--gphoto2`.
 
 ### Import on plug-in
 
 On macOS, install a user-space LaunchAgent that runs an import whenever a supported
-camera is attached:
+camera is attached or a filesystem is mounted:
 
 ```bash
 ansel camera install-agent
@@ -105,7 +110,8 @@ somewhere else.
 [camera_import]
 base_dir = "~/Pictures/Ansel/Imports"
 state_path = "~/.ansel/camera-import-state.json"
-backend = "gphoto2"
+backend = "auto"
+card_roots = ["/Volumes"]
 folder_layout = "2006-01-02"
 include_extensions = [".jpg", ".jpeg", ".nef", ".dng", ".mov", ".mp4", ".tif", ".tiff"]
 include_unknown = false

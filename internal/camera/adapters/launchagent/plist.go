@@ -45,14 +45,14 @@ func Install(anselPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
 	logsDir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "ansel")
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(renderPlist(anselPath, logsDir)), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(renderPlist(anselPath, logsDir)), 0o644); err != nil {
 		return "", err
 	}
 	_ = unload(path)
@@ -115,6 +115,8 @@ func renderPlist(anselPath, logsDir string) string {
 %s
     </dict>
   </dict>
+  <key>StartOnMount</key>
+  <true/>
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>

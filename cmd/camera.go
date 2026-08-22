@@ -7,49 +7,53 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/cwygoda/ansel/internal/camera/adapters/gphoto2"
 	"github.com/cwygoda/ansel/internal/camera/adapters/launchagent"
+	"github.com/cwygoda/ansel/internal/camera/adapters/massstorage"
 	"github.com/cwygoda/ansel/internal/camera/adapters/statejson"
 	"github.com/cwygoda/ansel/internal/camera/application"
 	"github.com/cwygoda/ansel/internal/camera/domain"
 	"github.com/cwygoda/ansel/internal/camera/ports"
 	"github.com/cwygoda/ansel/internal/config"
-	"github.com/spf13/cobra"
 )
 
 var cameraCmd = &cobra.Command{
 	Use:   "camera",
 	Short: "Detect cameras and import new pictures",
-	Long: `Detect supported USB cameras and import only new pictures.
+	Long: `Detect supported USB cameras and mounted camera cards, then import only new pictures.
 
-Supported cameras:
+Supported cameras/cards:
   - Nikon Z6 III
   - Ricoh GR IIIx
+  - Mounted cards with a DCIM directory, such as a CFExpress card in a USB-C reader
 
 Configuration is read from ~/.ansel/config.toml:
 
   [camera_import]
   base_dir = "~/Pictures/Ansel/Imports"
   state_path = "~/.ansel/camera-import-state.json"
-  backend = "gphoto2"
+  backend = "auto"
+  card_roots = ["/Volumes"]
   folder_layout = "2006-01-02"`,
 }
 
 var cameraDetectCmd = &cobra.Command{
 	Use:   "detect",
-	Short: "Detect attached cameras",
+	Short: "Detect attached cameras and mounted cards",
 	RunE:  runCameraDetect,
 }
 
 var cameraImportCmd = &cobra.Command{
 	Use:   "import",
-	Short: "Import new pictures from attached cameras",
+	Short: "Import new pictures from attached cameras and mounted cards",
 	RunE:  runCameraImport,
 }
 
 var cameraInstallAgentCmd = &cobra.Command{
 	Use:   "install-agent",
-	Short: "Install a user LaunchAgent that imports on USB camera attach",
+	Short: "Install a user LaunchAgent that imports on camera attach or card mount",
 	RunE:  runCameraInstallAgent,
 }
 
@@ -69,6 +73,8 @@ var cameraAgentTriggerCmd = &cobra.Command{
 var (
 	cameraBaseDir        string
 	cameraStatePath      string
+	cameraBackend        string
+	cameraCardRoots      []string
 	cameraGphoto2Binary  string
 	cameraDryRun         bool
 	cameraIncludeUnknown bool
@@ -79,12 +85,16 @@ func init() {
 	rootCmd.AddCommand(cameraCmd)
 	cameraCmd.AddCommand(cameraDetectCmd, cameraImportCmd, cameraInstallAgentCmd, cameraUninstallAgentCmd, cameraAgentTriggerCmd)
 
+	cameraDetectCmd.Flags().StringVar(&cameraBackend, "backend", "", "Import backend: auto, gphoto2, or card (overrides config)")
+	cameraDetectCmd.Flags().StringArrayVar(&cameraCardRoots, "card-root", nil, "Root directory to scan for mounted cards (can be repeated)")
 	cameraDetectCmd.Flags().StringVar(&cameraGphoto2Binary, "gphoto2", "gphoto2", "Path to gphoto2 binary")
 	cameraImportCmd.Flags().StringVar(&cameraBaseDir, "base-dir", "", "Base import directory (overrides config)")
 	cameraImportCmd.Flags().StringVar(&cameraStatePath, "state", "", "Bookmark state path (overrides config)")
+	cameraImportCmd.Flags().StringVar(&cameraBackend, "backend", "", "Import backend: auto, gphoto2, or card (overrides config)")
+	cameraImportCmd.Flags().StringArrayVar(&cameraCardRoots, "card-root", nil, "Root directory to scan for mounted cards (can be repeated)")
 	cameraImportCmd.Flags().StringVar(&cameraGphoto2Binary, "gphoto2", "gphoto2", "Path to gphoto2 binary")
 	cameraImportCmd.Flags().BoolVar(&cameraDryRun, "dry-run", false, "Plan imports without downloading")
-	cameraImportCmd.Flags().BoolVar(&cameraIncludeUnknown, "include-unknown", false, "Import from cameras not recognized as Nikon Z6 III or Ricoh GR IIIx")
+	cameraImportCmd.Flags().BoolVar(&cameraIncludeUnknown, "include-unknown", false, "Import from cameras/cards not recognized as Nikon Z6 III or Ricoh GR IIIx")
 
 	cameraInstallAgentCmd.Flags().StringVar(&cameraAnselPath, "ansel-path", "", "Absolute path to ansel binary (default: current executable)")
 }
@@ -92,13 +102,17 @@ func init() {
 func runCameraDetect(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	backend := gphoto2.New(cameraGphoto2Binary)
-	cameras, err := backend.Detect(ctx)
+	backends, err := newCameraBackendsFromConfig()
+	if err != nil {
+		return err
+	}
+	importer := &application.Importer{Backends: backends}
+	cameras, err := importer.Detect(ctx)
 	if err != nil {
 		return err
 	}
 	if len(cameras) == 0 {
-		fmt.Fprintln(os.Stdout, "No cameras detected by gphoto2.")
+		fmt.Fprintln(os.Stdout, "No cameras or mounted cards detected.")
 		return nil
 	}
 	for _, camera := range cameras {
@@ -157,7 +171,7 @@ func runImport(ctx context.Context, dryRun bool) error {
 		return err
 	}
 	if len(results) == 0 {
-		fmt.Fprintln(os.Stdout, "No supported cameras detected.")
+		fmt.Fprintln(os.Stdout, "No supported cameras or mounted cards detected.")
 		return nil
 	}
 	for _, result := range results {
@@ -183,18 +197,57 @@ func newCameraImporter(dryRun bool) (*application.Importer, error) {
 			return nil, err
 		}
 	}
+	if cameraBackend != "" {
+		cfg.Backend = cameraBackend
+	}
+	if len(cameraCardRoots) > 0 {
+		cfg.CardRoots, err = expandCLIPaths(cameraCardRoots)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if cameraIncludeUnknown {
 		cfg.IncludeUnknown = true
-	}
-	if strings.ToLower(cfg.Backend) != "gphoto2" {
-		return nil, fmt.Errorf("unsupported camera backend %q", cfg.Backend)
 	}
 	state, err := statejson.Open(cfg.StatePath)
 	if err != nil {
 		return nil, err
 	}
-	var backend ports.CameraBackend = gphoto2.New(cameraGphoto2Binary)
-	return &application.Importer{Backend: backend, State: state, Config: cfg, DryRun: dryRun}, nil
+	backends, err := newCameraBackends(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &application.Importer{Backends: backends, State: state, Config: cfg, DryRun: dryRun}, nil
+}
+
+func newCameraBackendsFromConfig() ([]ports.CameraBackend, error) {
+	cfg, err := application.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	if cameraBackend != "" {
+		cfg.Backend = cameraBackend
+	}
+	if len(cameraCardRoots) > 0 {
+		cfg.CardRoots, err = expandCLIPaths(cameraCardRoots)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return newCameraBackends(cfg)
+}
+
+func newCameraBackends(cfg application.Config) ([]ports.CameraBackend, error) {
+	switch strings.ToLower(cfg.Backend) {
+	case "", "auto":
+		return []ports.CameraBackend{gphoto2.New(cameraGphoto2Binary), massstorage.New(cfg.CardRoots)}, nil
+	case "gphoto2":
+		return []ports.CameraBackend{gphoto2.New(cameraGphoto2Binary)}, nil
+	case "card", "cards", "filesystem", "massstorage", "mass-storage":
+		return []ports.CameraBackend{massstorage.New(cfg.CardRoots)}, nil
+	default:
+		return nil, fmt.Errorf("unsupported camera backend %q", cfg.Backend)
+	}
 }
 
 func printImportResult(result domain.ImportResult, dryRun bool) {
@@ -219,4 +272,16 @@ func printImportResult(result domain.ImportResult, dryRun bool) {
 
 func expandCLIPath(path string) (string, error) {
 	return config.ExpandPath(path)
+}
+
+func expandCLIPaths(paths []string) ([]string, error) {
+	expanded := make([]string, 0, len(paths))
+	for _, path := range paths {
+		value, err := expandCLIPath(path)
+		if err != nil {
+			return nil, err
+		}
+		expanded = append(expanded, value)
+	}
+	return expanded, nil
 }

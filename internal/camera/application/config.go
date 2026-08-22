@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/cwygoda/ansel/internal/config"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // Config is the application-level camera import configuration.
@@ -14,6 +16,7 @@ type Config struct {
 	BaseDir           string   `toml:"base_dir"`
 	StatePath         string   `toml:"state_path"`
 	Backend           string   `toml:"backend"`
+	CardRoots         []string `toml:"card_roots"`
 	FolderLayout      string   `toml:"folder_layout"`
 	IncludeExtensions []string `toml:"include_extensions"`
 	IncludeUnknown    bool     `toml:"include_unknown"`
@@ -27,7 +30,8 @@ func DefaultConfig() Config {
 	return Config{
 		BaseDir:      "~/Pictures/Ansel/Imports",
 		StatePath:    "~/.ansel/camera-import-state.json",
-		Backend:      "gphoto2",
+		Backend:      "auto",
+		CardRoots:    defaultCardRoots(),
 		FolderLayout: "2006-01-02",
 		IncludeExtensions: []string{
 			".jpg", ".jpeg", ".nef", ".dng", ".mov", ".mp4", ".tif", ".tiff",
@@ -66,6 +70,9 @@ func overlayConfig(base *Config, override Config) {
 	if override.Backend != "" {
 		base.Backend = override.Backend
 	}
+	if len(override.CardRoots) > 0 {
+		base.CardRoots = override.CardRoots
+	}
 	if override.FolderLayout != "" {
 		base.FolderLayout = override.FolderLayout
 	}
@@ -85,6 +92,12 @@ func expandConfig(cfg Config) (Config, error) {
 	if err != nil {
 		return cfg, err
 	}
+	for idx, root := range cfg.CardRoots {
+		cfg.CardRoots[idx], err = expandPath(root)
+		if err != nil {
+			return cfg, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -98,4 +111,15 @@ func userConfigPath() (string, error) {
 
 func expandPath(path string) (string, error) {
 	return config.ExpandPath(path)
+}
+
+func defaultCardRoots() []string {
+	if runtime.GOOS == "darwin" {
+		return []string{"/Volumes"}
+	}
+	roots := []string{"/media", "/mnt"}
+	if user := os.Getenv("USER"); user != "" {
+		roots = append(roots, filepath.Join("/run/media", user))
+	}
+	return roots
 }

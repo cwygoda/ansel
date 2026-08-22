@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -18,10 +19,23 @@ type Client struct {
 }
 
 func New(binary string) *Client {
-	if binary == "" {
-		binary = "gphoto2"
+	if binary == "" || binary == "gphoto2" {
+		binary = defaultBinary()
 	}
 	return &Client{Binary: binary}
+}
+
+func defaultBinary() string {
+	if path, err := exec.LookPath("gphoto2"); err == nil {
+		return path
+	}
+	for _, candidate := range []string{"/opt/homebrew/bin/gphoto2", "/usr/local/bin/gphoto2"} {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return "gphoto2"
 }
 
 func (c *Client) Detect(ctx context.Context) ([]domain.Camera, error) {
@@ -100,8 +114,10 @@ func withKnownIDs(camera domain.Camera) domain.Camera {
 	return camera
 }
 
-var folderRE = regexp.MustCompile(`^There (?:is|are) \d+ files? in folder '([^']+)'\.`)
-var fileRE = regexp.MustCompile(`^#\d+\s+(.+?)\s+\w+\s+(\d+)\s+([A-Za-z]+)(?:\s+(.+))?$`)
+var (
+	folderRE = regexp.MustCompile(`^There (?:is|are) \d+ files? in folder '([^']+)'\.`)
+	fileRE   = regexp.MustCompile(`^#\d+\s+(.+?)\s+\w+\s+(\d+)\s+([A-Za-z]+)(?:\s+(.+))?$`)
+)
 
 func parseListFiles(out string) []domain.RemoteFile {
 	var files []domain.RemoteFile
