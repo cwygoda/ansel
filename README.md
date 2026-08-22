@@ -283,6 +283,9 @@ ansel geolocate ~/Pictures/shoot
 
 # Write XMP sidecars
 ansel geolocate ~/Pictures/shoot --track ride.fit.xz --write
+
+# Write geolocate-preview.kmz with thumbnail placemarks into the shoot directory
+ansel geolocate ~/Pictures/shoot --track ride.fit.xz --preview-map
 ```
 
 Only xz-compressed Garmin FIT activity files are read today. Other formats are added as
@@ -349,23 +352,36 @@ requires `--write`.
 
 Coordinates already present are treated as user data and kept unless you pass `--force`.
 
+### Preview map
+
+`--preview-map` writes `geolocate-preview.kmz` into the shoot directory. The KMZ contains
+one placemark per located photograph and embeds 320px JPEG thumbnails for quick checking
+in Google Earth or another KML/KMZ viewer. This is independent of `--write`: a dry run can
+still write the preview map because the map is a separate artifact you explicitly asked
+for, not metadata written into photographs or sidecars.
+
+Use `--preview-map-format kml` to write `geolocate-preview.kml` plus a sibling
+`geolocate-preview-thumbnails/` directory instead of a single KMZ archive.
+
 ### Flags
 
-| Flag           | Default | Description                                                   |
-| -------------- | ------- | ------------------------------------------------------------- |
-| `--track`      |         | Track file, glob or directory (repeatable)                    |
-| `--drift`      | `0`     | How far the camera clock runs ahead of true time              |
-| `--max-gap`    | `2m`    | Largest track gap to interpolate across                       |
-| `--buffer`     | `5m`    | How far outside a track photographs may still be placed       |
-| `--tz`         |         | Camera timezone, e.g. `Europe/Berlin`                         |
-| `--utc-offset` |         | Camera clock UTC offset, e.g. `+02:00`                        |
-| `--tracks-dir` | config  | Directory to search when no `--track` is given                |
-| `--dry-run`    | `true`  | Report without writing                                        |
-| `--write`      | `false` | Write coordinates                                             |
-| `--in-place`   | `false` | Embed into the photographs instead of sidecars                |
-| `--force`      | `false` | Replace coordinates already present                           |
-| `--json`       | `false` | Emit results as JSON, including how each position was derived |
-| `--exiftool`   | config  | Path to the exiftool binary                                   |
+| Flag                   | Default | Description                                                        |
+| ---------------------- | ------- | ------------------------------------------------------------------ |
+| `--track`              |         | Track file, glob or directory (repeatable)                         |
+| `--drift`              | `0`     | How far the camera clock runs ahead of true time                   |
+| `--max-gap`            | `2m`    | Largest track gap to interpolate across                            |
+| `--buffer`             | `5m`    | How far outside a track photographs may still be placed            |
+| `--tz`                 |         | Camera timezone, e.g. `Europe/Berlin`                              |
+| `--utc-offset`         |         | Camera clock UTC offset, e.g. `+02:00`                             |
+| `--tracks-dir`         | config  | Directory to search when no `--track` is given                     |
+| `--dry-run`            | `true`  | Report without writing                                             |
+| `--write`              | `false` | Write coordinates                                                  |
+| `--in-place`           | `false` | Embed into the photographs instead of sidecars                     |
+| `--force`              | `false` | Replace coordinates already present                                |
+| `--json`               | `false` | Emit results as JSON, including how each position was derived      |
+| `--preview-map`        | `false` | Write a KML/KMZ map with thumbnail placemarks into the shoot directory |
+| `--preview-map-format` | `kmz`   | Preview map format: `kmz` or `kml`                                 |
+| `--exiftool`           | config  | Path to the exiftool binary                                        |
 
 ### Configuration
 

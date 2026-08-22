@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/cwygoda/ansel/internal/exiftool"
 	geoexiftool "github.com/cwygoda/ansel/internal/geolocate/adapters/exiftool"
 	"github.com/cwygoda/ansel/internal/geolocate/adapters/fitxz"
+	"github.com/cwygoda/ansel/internal/geolocate/adapters/kmlpreview"
 	"github.com/cwygoda/ansel/internal/geolocate/application"
 	"github.com/cwygoda/ansel/internal/geolocate/matching"
 	"github.com/cwygoda/ansel/internal/geolocate/ports"
-	"github.com/spf13/cobra"
+	imglib "github.com/cwygoda/ansel/internal/image"
 )
 
 var geolocateCmd = &cobra.Command{
@@ -68,6 +71,9 @@ Examples:
   # Correct a camera running 90 seconds fast, rewriting its timestamps
   ansel geolocate ~/Pictures/shoot --track ride.fit.xz --drift 90s --write
 
+  # Write geolocate-preview.kmz with thumbnail placemarks into the shoot directory
+  ansel geolocate ~/Pictures/shoot --track ride.fit.xz --preview-map
+
   # Embed into the photographs themselves rather than sidecars
   ansel geolocate ~/Pictures/shoot --track ride.fit.xz --write --in-place`,
 	Args: cobra.MaximumNArgs(1),
@@ -75,19 +81,21 @@ Examples:
 }
 
 var (
-	geolocateDryRun    bool
-	geolocateWrite     bool
-	geolocateInPlace   bool
-	geolocateForce     bool
-	geolocateJSON      bool
-	geolocateTracks    []string
-	geolocateDrift     time.Duration
-	geolocateMaxGap    time.Duration
-	geolocateBuffer    time.Duration
-	geolocateTimezone  string
-	geolocateUTCOffset string
-	geolocateTracksDir string
-	geolocateExiftool  string
+	geolocateDryRun           bool
+	geolocateWrite            bool
+	geolocateInPlace          bool
+	geolocateForce            bool
+	geolocateJSON             bool
+	geolocatePreviewMap       bool
+	geolocatePreviewMapFormat string
+	geolocateTracks           []string
+	geolocateDrift            time.Duration
+	geolocateMaxGap           time.Duration
+	geolocateBuffer           time.Duration
+	geolocateTimezone         string
+	geolocateUTCOffset        string
+	geolocateTracksDir        string
+	geolocateExiftool         string
 )
 
 func init() {
@@ -98,6 +106,8 @@ func init() {
 	geolocateCmd.Flags().BoolVar(&geolocateInPlace, "in-place", false, "Embed into the photographs instead of writing XMP sidecars")
 	geolocateCmd.Flags().BoolVar(&geolocateForce, "force", false, "Replace coordinates that are already present")
 	geolocateCmd.Flags().BoolVar(&geolocateJSON, "json", false, "Emit results as JSON, including each position and how it was derived")
+	geolocateCmd.Flags().BoolVar(&geolocatePreviewMap, "preview-map", false, "Write a geolocate-preview KMZ/KML map with photo thumbnails into the shoot directory")
+	geolocateCmd.Flags().StringVar(&geolocatePreviewMapFormat, "preview-map-format", "kmz", "Preview map format: kmz or kml")
 	geolocateCmd.Flags().StringArrayVar(&geolocateTracks, "track", nil, "Track file, glob or directory (repeatable)")
 	geolocateCmd.Flags().DurationVar(&geolocateDrift, "drift", 0, "How far the camera clock runs ahead of true time (e.g. 90s, -1m30s)")
 	geolocateCmd.Flags().DurationVar(&geolocateMaxGap, "max-gap", 0, "Largest track gap to interpolate across (overrides config)")
@@ -125,7 +135,7 @@ func runGeolocate(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 	defer cancel()
 
-	locator, closeAll, err := newLocator(cmd, write)
+	locator, previewWriter, closeAll, err := newLocator(cmd, write)
 	if err != nil {
 		return err
 	}
@@ -134,6 +144,17 @@ func runGeolocate(cmd *cobra.Command, args []string) error {
 	result, err := locator.Locate(ctx, root)
 	if err != nil {
 		return err
+	}
+
+	if geolocatePreviewMap {
+		imglib.InitVips()
+		defer imglib.ShutdownVips()
+
+		report, err := previewWriter.Write(ctx, result, geolocatePreviewMapFormat)
+		if err != nil {
+			return err
+		}
+		printGeolocatePreviewMap(report)
 	}
 
 	if geolocateJSON {
@@ -145,15 +166,15 @@ func runGeolocate(cmd *cobra.Command, args []string) error {
 
 // newLocator wires the concrete adapters. This is the only place that knows a
 // subprocess and a compressed activity format are involved.
-func newLocator(cmd *cobra.Command, write bool) (*application.Locator, func(), error) {
+func newLocator(cmd *cobra.Command, write bool) (*application.Locator, *kmlpreview.Writer, func(), error) {
 	cfg, err := geolocateConfig()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	zone, err := application.NewZone(cfg.Timezone, cfg.UTCOffset)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// One exiftool process serves the whole run, reading and writing alike.
@@ -174,7 +195,7 @@ func newLocator(cmd *cobra.Command, write bool) (*application.Locator, func(), e
 		Force:      geolocateForce,
 	}
 
-	return locator, func() { _ = session.Close() }, nil
+	return locator, kmlpreview.New(session), func() { _ = session.Close() }, nil
 }
 
 // matchingOptions applies the flags over the config. Both limits are read via

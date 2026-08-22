@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cwygoda/ansel/internal/geolocate/adapters/kmlpreview"
 	"github.com/cwygoda/ansel/internal/geolocate/domain"
 )
 
@@ -116,6 +117,19 @@ func printGeolocateFailures(result domain.Result) {
 	for _, failure := range result.Failures {
 		fmt.Fprintf(os.Stderr, "    %s [%s] %s\n",
 			filepath.Base(failure.Path), failure.Stage, failure.Err)
+	}
+}
+
+func printGeolocatePreviewMap(report kmlpreview.Report) {
+	fmt.Fprintf(os.Stderr, "  Preview map: %s (%d placemarks, %d thumbnails)\n",
+		report.Path, report.Placemarks, report.Thumbnails)
+	if len(report.ThumbnailFailures) == 0 {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "    %d thumbnail failures:\n", len(report.ThumbnailFailures))
+	for _, failure := range report.ThumbnailFailures {
+		fmt.Fprintf(os.Stderr, "      %s %s\n", filepath.Base(failure.Path), failure.Err)
 	}
 }
 
