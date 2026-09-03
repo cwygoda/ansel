@@ -217,7 +217,13 @@ func newCameraImporter(dryRun bool) (*application.Importer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &application.Importer{Backends: backends, State: state, Config: cfg, DryRun: dryRun}, nil
+	return &application.Importer{
+		Backends: backends,
+		State:    state,
+		Config:   cfg,
+		DryRun:   dryRun,
+		Progress: printImportProgress,
+	}, nil
 }
 
 func newCameraBackendsFromConfig() ([]ports.CameraBackend, error) {
@@ -247,6 +253,20 @@ func newCameraBackends(cfg application.Config) ([]ports.CameraBackend, error) {
 		return []ports.CameraBackend{massstorage.New(cfg.CardRoots)}, nil
 	default:
 		return nil, fmt.Errorf("unsupported camera backend %q", cfg.Backend)
+	}
+}
+
+func printImportProgress(event application.ImportProgressEvent) {
+	known := event.Camera.KnownName()
+	if known == "" {
+		known = event.Camera.Model
+	}
+
+	switch event.Stage {
+	case application.ProgressDownloadStart:
+		fmt.Fprintf(os.Stderr, "Downloading %d/%d from %s: %s/%s\n", event.Index, event.Total, known, event.File.Folder, event.File.Name)
+	case application.ProgressDownloadComplete:
+		fmt.Fprintf(os.Stderr, "Downloaded %d/%d: %s\n", event.Index, event.Total, event.Destination)
 	}
 }
 

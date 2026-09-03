@@ -19,6 +19,23 @@ type Importer struct {
 	State    ports.StateStore
 	Config   Config
 	DryRun   bool
+	Progress func(ImportProgressEvent)
+}
+
+type ImportProgressStage string
+
+const (
+	ProgressDownloadStart    ImportProgressStage = "download_start"
+	ProgressDownloadComplete ImportProgressStage = "download_complete"
+)
+
+type ImportProgressEvent struct {
+	Stage       ImportProgressStage
+	Camera      domain.Camera
+	File        domain.RemoteFile
+	Index       int
+	Total       int
+	Destination string
 }
 
 func (i *Importer) Detect(ctx context.Context) ([]domain.Camera, error) {
@@ -89,9 +106,20 @@ func (i *Importer) importCamera(ctx context.Context, backend ports.CameraBackend
 			continue
 		}
 		result.Planned = append(result.Planned, file)
-		if i.DryRun {
-			continue
-		}
+	}
+
+	if i.DryRun {
+		return result, nil
+	}
+
+	for idx, file := range result.Planned {
+		i.notify(ImportProgressEvent{
+			Stage:  ProgressDownloadStart,
+			Camera: camera,
+			File:   file,
+			Index:  idx + 1,
+			Total:  len(result.Planned),
+		})
 
 		record, err := i.downloadFile(ctx, backend, camera, file)
 		if err != nil {
@@ -102,6 +130,15 @@ func (i *Importer) importCamera(ctx context.Context, backend ports.CameraBackend
 		}
 		result.Downloaded++
 		result.Records = append(result.Records, record)
+
+		i.notify(ImportProgressEvent{
+			Stage:       ProgressDownloadComplete,
+			Camera:      camera,
+			File:        file,
+			Index:       idx + 1,
+			Total:       len(result.Planned),
+			Destination: record.Destination,
+		})
 	}
 
 	return result, nil
@@ -141,6 +178,12 @@ func (i *Importer) downloadFile(ctx context.Context, backend ports.CameraBackend
 		Destination:  dest,
 		DownloadedAt: time.Now(),
 	}, nil
+}
+
+func (i *Importer) notify(event ImportProgressEvent) {
+	if i.Progress != nil {
+		i.Progress(event)
+	}
 }
 
 func (i *Importer) importBackends() []ports.CameraBackend {

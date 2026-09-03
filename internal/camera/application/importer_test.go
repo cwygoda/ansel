@@ -44,6 +44,7 @@ func TestImporterImportCopiesFromSelectedBackend(t *testing.T) {
 	file := domain.RemoteFile{Folder: "/DCIM/100NZ6_3", Name: "DSC_0001.NEF", SizeBytes: 42}
 	state := &fakeState{imported: map[string]bool{}}
 	backend := fakeBackend{cameras: []domain.Camera{camera}, files: []domain.RemoteFile{file}, content: []byte("raw")}
+	var progress []ImportProgressEvent
 	importer := &Importer{
 		Backends: []ports.CameraBackend{backend},
 		State:    state,
@@ -51,6 +52,9 @@ func TestImporterImportCopiesFromSelectedBackend(t *testing.T) {
 			BaseDir:           t.TempDir(),
 			FolderLayout:      "2006-01-02",
 			IncludeExtensions: []string{".nef"},
+		},
+		Progress: func(event ImportProgressEvent) {
+			progress = append(progress, event)
 		},
 	}
 
@@ -71,6 +75,15 @@ func TestImporterImportCopiesFromSelectedBackend(t *testing.T) {
 	}
 	if string(data) != "raw" {
 		t.Fatalf("downloaded content = %q, want %q", string(data), "raw")
+	}
+	if len(progress) != 2 {
+		t.Fatalf("progress events = %#v, want start and complete", progress)
+	}
+	if progress[0].Stage != ProgressDownloadStart || progress[0].Index != 1 || progress[0].Total != 1 {
+		t.Fatalf("start progress = %#v", progress[0])
+	}
+	if progress[1].Stage != ProgressDownloadComplete || progress[1].Destination == "" {
+		t.Fatalf("complete progress = %#v", progress[1])
 	}
 }
 
